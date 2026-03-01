@@ -87,6 +87,7 @@ data class TerminalTab(
     val label: String,
     val transportType: String,
     val emulator: TerminalEmulator,
+    val mouseMode: StateFlow<Boolean>,
     val sendInput: (ByteArray) -> Unit,
     val resize: (Int, Int) -> Unit,
     val close: () -> Unit,
@@ -206,9 +207,11 @@ class TerminalViewModel @Inject constructor(
             val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs)
 
             lateinit var emulator: TerminalEmulator
+            val mouseTracker = MouseModeTracker()
             val termSession = sessionManager.createTerminalSession(
                 sessionId = sessionId,
                 onDataReceived = { data, offset, length ->
+                    mouseTracker.process(data, offset, length)
                     emulator.writeInput(data, offset, length)
                 },
             ) ?: continue
@@ -235,6 +238,7 @@ class TerminalViewModel @Inject constructor(
                     label = tabLabel,
                     transportType = "SSH",
                     emulator = emulator,
+                    mouseMode = mouseTracker.mouseMode,
                     sendInput = { data -> termSession.sendToSsh(data) },
                     resize = { cols, rows -> termSession.resize(cols, rows) },
                     close = { termSession.close() },
@@ -252,9 +256,11 @@ class TerminalViewModel @Inject constructor(
             val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs)
 
             lateinit var emulator: TerminalEmulator
+            val rnsMouseTracker = MouseModeTracker()
             val rnsSession = reticulumSessionManager.createTerminalSession(
                 sessionId = sessionId,
                 onDataReceived = { data, offset, length ->
+                    rnsMouseTracker.process(data, offset, length)
                     emulator.writeInput(data, offset, length)
                 },
             ) ?: continue
@@ -281,6 +287,7 @@ class TerminalViewModel @Inject constructor(
                     label = tabLabel,
                     transportType = "RETICULUM",
                     emulator = emulator,
+                    mouseMode = rnsMouseTracker.mouseMode,
                     sendInput = { data -> rnsSession.sendInput(data) },
                     resize = { cols, rows -> rnsSession.resize(cols, rows) },
                     close = { rnsSession.close() },

@@ -40,10 +40,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -188,7 +193,27 @@ fun TerminalScreen(
                         }
                     }
 
-                    Box(modifier = Modifier.weight(1f).then(terminalModifier)) {
+                    val isMouseMode by activeTab.mouseMode.collectAsState()
+                    var surfaceSize by remember { mutableStateOf(IntSize.Zero) }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .onSizeChanged { surfaceSize = it }
+                            .then(
+                                if (isMouseMode) {
+                                    Modifier.pointerInput(activeTab.sessionId) {
+                                        scrollGestureDetector(
+                                            activeTab = activeTab,
+                                            surfaceSize = { surfaceSize },
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .then(terminalModifier),
+                    ) {
                         Terminal(
                             terminalEmulator = activeTab.emulator,
                             modifier = Modifier.fillMaxSize(),
@@ -324,6 +349,81 @@ private fun NewTabSessionPickerDialog(
             }
         },
     )
+}
+
+/** Pixels of vertical drag accumulated before emitting one scroll event. */
+private const val SCROLL_THRESHOLD_PX = 40f
+
+/**
+ * Build an SGR-encoded mouse wheel escape sequence.
+ * Scroll up: button 64, scroll down: button 65.
+ * Format: ESC [ < button ; col ; row M
+ * col and row are 1-based terminal coordinates.
+ */
+private fun sgrMouseWheel(scrollUp: Boolean, col: Int, row: Int): ByteArray {
+    val button = if (scrollUp) 64 else 65
+    return "\u001b[<$button;$col;${row}M".toByteArray()
+}
+
+/**
+ * Detect vertical drag gestures and emit SGR mouse wheel sequences.
+ * Called inside a `Modifier.pointerInput` block when mouse mode is active.
+ */
+private suspend fun PointerInputScope.scrollGestureDetector(
+    activeTab: TerminalTab,
+    surfaceSize: () -> IntSize,
+) {
+    awaitPointerEventScope {
+        while (true) {
+            // Wait for first touch down
+            val down = awaitPointerEvent()
+            val firstChange = down.changes.firstOrNull() ?: continue
+
+            if (!firstChange.pressed) continue
+
+            var accumulatedY = 0f
+            var isDragging = false
+
+            // Track subsequent moves until release
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull() ?: break
+
+                if (!change.pressed) break
+
+                val dy = change.position.y - (change.previousPosition.y)
+                accumulatedY += dy
+
+                // Only start consuming once we've moved enough vertically
+                // to distinguish from a tap
+                if (!isDragging && abs(accumulatedY) > SCROLL_THRESHOLD_PX) {
+                    isDragging = true
+                }
+
+                if (isDragging) {
+                    change.consume()
+
+                    // Emit scroll events for each threshold crossed
+                    while (abs(accumulatedY) >= SCROLL_THRESHOLD_PX) {
+                        val draggedUp = accumulatedY < 0
+                        accumulatedY += if (draggedUp) SCROLL_THRESHOLD_PX else -SCROLL_THRESHOLD_PX
+                        // Natural scrolling: drag down = scroll up
+                        val scrollUp = !draggedUp
+
+                        val size = surfaceSize()
+                        if (size.width > 0 && size.height > 0) {
+                            val dims = activeTab.emulator.dimensions
+                            val col = ((change.position.x / size.width) * dims.columns)
+                                .toInt().coerceIn(1, dims.columns)
+                            val row = ((change.position.y / size.height) * dims.rows)
+                                .toInt().coerceIn(1, dims.rows)
+                            activeTab.sendInput(sgrMouseWheel(scrollUp, col, row))
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
