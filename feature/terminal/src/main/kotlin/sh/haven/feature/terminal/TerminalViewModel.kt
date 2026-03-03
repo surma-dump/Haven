@@ -204,7 +204,8 @@ class TerminalViewModel @Inject constructor(
             if (!sessionManager.isReadyForTerminal(sessionId)) continue
 
             val session = sshSessions[sessionId] ?: continue
-            val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs)
+            val baseLabel = session.chosenSessionName ?: session.label
+            val tabLabel = generateTabLabel(baseLabel, session.profileId, currentTabs)
 
             lateinit var emulator: TerminalEmulator
             val mouseTracker = MouseModeTracker()
