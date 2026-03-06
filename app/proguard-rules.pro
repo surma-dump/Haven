@@ -15,6 +15,9 @@
 -dontwarn javax.naming.**
 -dontwarn com.sun.jna.**
 
+# Keep termlib classes — native JNI renderer accesses fields by name
+-keep class org.connectbot.terminal.** { *; }
+
 # Keep Hilt generated classes
 -keep class dagger.hilt.** { *; }
 -keep class javax.inject.** { *; }
