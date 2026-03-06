@@ -67,3 +67,13 @@ jobs:
           files: |
             app/build/outputs/apk/release/haven-*-release.apk
             app/build/outputs/bundle/release/*.aab
+
+      - name: Upload to Google Play (internal track)
+        if: secrets.PLAY_SERVICE_ACCOUNT_JSON != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: sh.haven.app
+          releaseFiles: app/build/outputs/bundle/release/*.aab
+          track: internal
+          status: completed
