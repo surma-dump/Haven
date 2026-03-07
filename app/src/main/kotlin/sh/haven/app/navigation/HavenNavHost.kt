@@ -49,6 +49,8 @@ fun HavenNavHost(
     val coroutineScope = rememberCoroutineScope()
     val terminalFontSize by preferencesRepository.terminalFontSize
         .collectAsState(initial = UserPreferencesRepository.DEFAULT_FONT_SIZE)
+    val toolbarLayout by preferencesRepository.toolbarLayout
+        .collectAsState(initial = sh.haven.core.data.preferences.ToolbarLayout.DEFAULT)
 
     // Profile ID to focus when navigating to terminal
     var pendingTerminalProfileId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -100,6 +102,7 @@ fun HavenNavHost(
                         navigateToProfileId = pendingTerminalProfileId,
                         isActive = pagerState.settledPage == Screen.Terminal.ordinal,
                         fontSize = terminalFontSize,
+                        toolbarLayout = toolbarLayout,
                         onNavigateToConnections = {
                             coroutineScope.launch {
                                 pagerState.animateScrollToPage(Screen.Connections.ordinal)

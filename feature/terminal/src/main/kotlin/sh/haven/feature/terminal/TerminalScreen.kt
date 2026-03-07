@@ -60,6 +60,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import org.connectbot.terminal.ModifierManager
 import org.connectbot.terminal.Terminal
+import sh.haven.core.data.preferences.ToolbarLayout
 import sh.haven.core.data.preferences.UserPreferencesRepository
 
 @Composable
@@ -68,6 +69,7 @@ fun TerminalScreen(
     isActive: Boolean = false,
     terminalModifier: Modifier = Modifier,
     fontSize: Int = UserPreferencesRepository.DEFAULT_FONT_SIZE,
+    toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onNavigateToConnections: () -> Unit = {},
     onSelectionActiveChanged: (Boolean) -> Unit = {},
     viewModel: TerminalViewModel = hiltViewModel(),
@@ -284,6 +286,7 @@ fun TerminalScreen(
                             ctrlActive = ctrlActive,
                             altActive = altActive,
                             bracketPasteMode = isBracketPaste,
+                            layout = toolbarLayout,
                             onToggleCtrl = viewModel::toggleCtrl,
                             onToggleAlt = viewModel::toggleAlt,
                             modifier = Modifier.fillMaxWidth(),

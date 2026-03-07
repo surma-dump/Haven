@@ -2,9 +2,12 @@ package sh.haven.feature.terminal
 
 import android.app.Activity
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -12,10 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,18 +34,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import sh.haven.core.data.preferences.ToolbarItem
+import sh.haven.core.data.preferences.ToolbarKey
+import sh.haven.core.data.preferences.ToolbarLayout
 
 // VT100/xterm escape sequences for special keys
 private const val ESC = "\u001b"
 private val KEY_ESC = byteArrayOf(0x1b)
 private val KEY_TAB = byteArrayOf(0x09)
-private val KEY_SHIFT_TAB = "$ESC[Z".toByteArray() // CSI Z = Shift+Tab (backtab)
+private val KEY_SHIFT_TAB = "$ESC[Z".toByteArray()
 private val KEY_UP = "$ESC[A".toByteArray()
 private val KEY_DOWN = "$ESC[B".toByteArray()
 private val KEY_RIGHT = "$ESC[C".toByteArray()
@@ -56,12 +61,12 @@ fun KeyboardToolbar(
     ctrlActive: Boolean = false,
     altActive: Boolean = false,
     bracketPasteMode: Boolean = false,
+    layout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onToggleCtrl: () -> Unit = {},
     onToggleAlt: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var shiftActive by remember { mutableStateOf(false) }
-    val clipboardManager = LocalClipboardManager.current
     val view = LocalView.current
     val imeVisible = WindowInsets.isImeVisible
 
@@ -69,13 +74,105 @@ fun KeyboardToolbar(
         tonalElevation = 2.dp,
         modifier = modifier,
     ) {
-        Row(
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Toggle keyboard
+        Column {
+            for (row in layout.rows) {
+                if (row.isNotEmpty()) {
+                    ToolbarRow(
+                        items = row,
+                        onSendBytes = onSendBytes,
+                        focusRequester = focusRequester,
+                        ctrlActive = ctrlActive,
+                        altActive = altActive,
+                        shiftActive = shiftActive,
+                        imeVisible = imeVisible,
+                        view = view,
+                        onToggleCtrl = onToggleCtrl,
+                        onToggleAlt = onToggleAlt,
+                        onToggleShift = { shiftActive = !shiftActive },
+                        onShiftUsed = { shiftActive = false },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolbarRow(
+    items: List<ToolbarItem>,
+    onSendBytes: (ByteArray) -> Unit,
+    focusRequester: FocusRequester,
+    ctrlActive: Boolean,
+    altActive: Boolean,
+    shiftActive: Boolean,
+    imeVisible: Boolean,
+    view: android.view.View,
+    onToggleCtrl: () -> Unit,
+    onToggleAlt: () -> Unit,
+    onToggleShift: () -> Unit,
+    onShiftUsed: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (item in items) {
+            when (item) {
+                is ToolbarItem.BuiltIn -> BuiltInKey(
+                    key = item.key,
+                    onSendBytes = onSendBytes,
+                    focusRequester = focusRequester,
+                    ctrlActive = ctrlActive,
+                    altActive = altActive,
+                    shiftActive = shiftActive,
+                    imeVisible = imeVisible,
+                    view = view,
+                    onToggleCtrl = onToggleCtrl,
+                    onToggleAlt = onToggleAlt,
+                    onToggleShift = onToggleShift,
+                    onShiftUsed = onShiftUsed,
+                )
+                is ToolbarItem.Custom -> {
+                    SymbolButton(item.label) {
+                        val bytes = item.send.toByteArray()
+                        if (ctrlActive || altActive) {
+                            // Apply modifiers to first byte if it's a single printable char
+                            if (item.send.length == 1) {
+                                sendChar(item.send[0], ctrlActive, altActive, onSendBytes)
+                            } else {
+                                onSendBytes(bytes)
+                            }
+                            if (ctrlActive) onToggleCtrl()
+                            if (altActive) onToggleAlt()
+                        } else {
+                            onSendBytes(bytes)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuiltInKey(
+    key: ToolbarKey,
+    onSendBytes: (ByteArray) -> Unit,
+    focusRequester: FocusRequester,
+    ctrlActive: Boolean,
+    altActive: Boolean,
+    shiftActive: Boolean,
+    imeVisible: Boolean,
+    view: android.view.View,
+    onToggleCtrl: () -> Unit,
+    onToggleAlt: () -> Unit,
+    onToggleShift: () -> Unit,
+    onShiftUsed: () -> Unit,
+) {
+    when (key) {
+        ToolbarKey.KEYBOARD -> {
             ToolbarIconButton(Icons.Filled.Keyboard, "Toggle keyboard") {
                 val window = (view.context as? Activity)?.window ?: return@ToolbarIconButton
                 val controller = WindowCompat.getInsetsController(window, view)
@@ -86,64 +183,30 @@ fun KeyboardToolbar(
                     controller.show(WindowInsetsCompat.Type.ime())
                 }
             }
-
-            // Paste (wrapped in bracket paste sequences when mode 2004 is active)
-            ToolbarIconButton(Icons.Filled.ContentPaste, "Paste") {
-                val text = clipboardManager.getText()?.text
-                if (!text.isNullOrEmpty()) {
-                    if (bracketPasteMode) {
-                        onSendBytes("\u001b[200~".toByteArray() + text.toByteArray() + "\u001b[201~".toByteArray())
-                    } else {
-                        onSendBytes(text.toByteArray())
-                    }
-                }
+        }
+        ToolbarKey.ESC_KEY -> ToolbarTextButton("Esc") { onSendBytes(KEY_ESC) }
+        ToolbarKey.TAB_KEY -> ToolbarTextButton("Tab") {
+            if (shiftActive) {
+                onSendBytes(KEY_SHIFT_TAB)
+                onShiftUsed()
+            } else {
+                onSendBytes(KEY_TAB)
             }
-
-            // Esc
-            ToolbarTextButton("Esc") { onSendBytes(KEY_ESC) }
-
-            // Tab (sends Shift+Tab / backtab when shift is active)
-            ToolbarTextButton("Tab") {
-                if (shiftActive) {
-                    onSendBytes(KEY_SHIFT_TAB)
-                    shiftActive = false
-                } else {
-                    onSendBytes(KEY_TAB)
-                }
+        }
+        ToolbarKey.SHIFT -> ToolbarToggleButton("Shift", shiftActive, onClick = onToggleShift)
+        ToolbarKey.CTRL -> ToolbarToggleButton("Ctrl", ctrlActive, onClick = onToggleCtrl)
+        ToolbarKey.ALT -> ToolbarToggleButton("Alt", altActive, onClick = onToggleAlt)
+        ToolbarKey.ARROW_LEFT -> ToolbarIconButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Left") { onSendBytes(KEY_LEFT) }
+        ToolbarKey.ARROW_UP -> ToolbarIconButton(Icons.Filled.KeyboardArrowUp, "Up") { onSendBytes(KEY_UP) }
+        ToolbarKey.ARROW_DOWN -> ToolbarIconButton(Icons.Filled.KeyboardArrowDown, "Down") { onSendBytes(KEY_DOWN) }
+        ToolbarKey.ARROW_RIGHT -> ToolbarIconButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Right") { onSendBytes(KEY_RIGHT) }
+        else -> {
+            val ch = key.char ?: return
+            SymbolButton(key.label) {
+                sendChar(ch, ctrlActive, altActive, onSendBytes)
+                if (ctrlActive) onToggleCtrl()
+                if (altActive) onToggleAlt()
             }
-
-            // Shift (sticky toggle)
-            ToolbarToggleButton(
-                label = "Shift",
-                active = shiftActive,
-                onClick = { shiftActive = !shiftActive },
-            )
-
-            // Ctrl (sticky toggle)
-            ToolbarToggleButton(
-                label = "Ctrl",
-                active = ctrlActive,
-                onClick = onToggleCtrl,
-            )
-
-            // Alt (sticky toggle)
-            ToolbarToggleButton(
-                label = "Alt",
-                active = altActive,
-                onClick = onToggleAlt,
-            )
-
-            // Arrow keys
-            ToolbarIconButton(Icons.Filled.KeyboardArrowUp, "Up") { onSendBytes(KEY_UP) }
-            ToolbarIconButton(Icons.Filled.KeyboardArrowDown, "Down") { onSendBytes(KEY_DOWN) }
-            ToolbarIconButton(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Left") { onSendBytes(KEY_LEFT) }
-            ToolbarIconButton(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Right") { onSendBytes(KEY_RIGHT) }
-
-            // Common symbols
-            ToolbarTextButton("|") { sendChar('|', ctrlActive, altActive, onSendBytes); if (ctrlActive) onToggleCtrl(); if (altActive) onToggleAlt() }
-            ToolbarTextButton("~") { sendChar('~', ctrlActive, altActive, onSendBytes); if (ctrlActive) onToggleCtrl(); if (altActive) onToggleAlt() }
-            ToolbarTextButton("/") { sendChar('/', ctrlActive, altActive, onSendBytes); if (ctrlActive) onToggleCtrl(); if (altActive) onToggleAlt() }
-            ToolbarTextButton("-") { sendChar('-', ctrlActive, altActive, onSendBytes); if (ctrlActive) onToggleCtrl(); if (altActive) onToggleAlt() }
         }
     }
 }
@@ -155,14 +218,12 @@ private fun sendChar(
     onSendBytes: (ByteArray) -> Unit,
 ) {
     val byte = if (ctrl && char.code in 0x40..0x7F) {
-        // Ctrl+char = char AND 0x1F
         byteArrayOf((char.code and 0x1F).toByte())
     } else {
         char.toString().toByteArray()
     }
 
     if (alt) {
-        // Alt prefix = ESC + char
         onSendBytes(byteArrayOf(0x1b) + byte)
     } else {
         onSendBytes(byte)
@@ -173,9 +234,12 @@ private fun sendChar(
 private fun ToolbarTextButton(label: String, onClick: () -> Unit) {
     FilledTonalButton(
         onClick = onClick,
-        modifier = Modifier.padding(horizontal = 2.dp),
+        modifier = Modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
     ) {
-        Text(label, fontSize = 12.sp)
+        Text(label, fontSize = 11.sp)
     }
 }
 
@@ -183,15 +247,31 @@ private fun ToolbarTextButton(label: String, onClick: () -> Unit) {
 private fun ToolbarToggleButton(label: String, active: Boolean, onClick: () -> Unit) {
     FilledTonalButton(
         onClick = onClick,
-        modifier = Modifier.padding(horizontal = 2.dp),
+        modifier = Modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
         colors = if (active) {
-            androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+            ButtonDefaults.filledTonalButtonColors(
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             )
         } else {
-            androidx.compose.material3.ButtonDefaults.filledTonalButtonColors()
+            ButtonDefaults.filledTonalButtonColors()
         },
+    ) {
+        Text(label, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun SymbolButton(label: String, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier
+            .padding(horizontal = 1.dp)
+            .height(30.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
     ) {
         Text(label, fontSize = 12.sp)
     }
@@ -201,8 +281,8 @@ private fun ToolbarToggleButton(label: String, active: Boolean, onClick: () -> U
 private fun ToolbarIconButton(icon: ImageVector, description: String, onClick: () -> Unit) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(36.dp),
+        modifier = Modifier.size(32.dp),
     ) {
-        Icon(icon, contentDescription = description, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = description, modifier = Modifier.size(18.dp))
     }
 }

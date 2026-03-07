@@ -16,21 +16,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardAlt
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -56,6 +61,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import sh.haven.core.data.preferences.ToolbarItem
+import sh.haven.core.data.preferences.ToolbarKey
+import sh.haven.core.data.preferences.ToolbarLayout
 import sh.haven.core.data.preferences.UserPreferencesRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,11 +76,14 @@ fun SettingsScreen(
     val theme by viewModel.theme.collectAsState()
     val sessionManager by viewModel.sessionManager.collectAsState()
     val colorScheme by viewModel.terminalColorScheme.collectAsState()
+    val toolbarLayout by viewModel.toolbarLayout.collectAsState()
+    val toolbarLayoutJson by viewModel.toolbarLayoutJson.collectAsState()
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showSessionManagerDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showColorSchemeDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showToolbarConfigDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
@@ -113,6 +124,12 @@ fun SettingsScreen(
             title = "Terminal color scheme",
             subtitle = colorScheme.label,
             onClick = { showColorSchemeDialog = true },
+        )
+        SettingsItem(
+            icon = Icons.Filled.KeyboardAlt,
+            title = "Keyboard toolbar",
+            subtitle = "Configure toolbar keys and layout",
+            onClick = { showToolbarConfigDialog = true },
         )
         SettingsItem(
             icon = Icons.Filled.ColorLens,
@@ -199,6 +216,22 @@ fun SettingsScreen(
             onConfirm = { newSize ->
                 viewModel.setTerminalFontSize(newSize)
                 showFontSizeDialog = false
+            },
+        )
+    }
+
+    if (showToolbarConfigDialog) {
+        ToolbarConfigDialog(
+            layout = toolbarLayout,
+            layoutJson = toolbarLayoutJson,
+            onDismiss = { showToolbarConfigDialog = false },
+            onSaveLayout = { layout ->
+                viewModel.setToolbarLayout(layout)
+                showToolbarConfigDialog = false
+            },
+            onSaveJson = { json ->
+                viewModel.setToolbarLayoutJson(json)
+                showToolbarConfigDialog = false
             },
         )
     }
@@ -497,4 +530,275 @@ private fun SettingsItem(
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp),
     )
+}
+
+/** Assignment for a key in the toolbar config dialog. */
+private enum class KeyAssignment { ROW1, ROW2, OFF }
+
+@Composable
+private fun ToolbarConfigDialog(
+    layout: ToolbarLayout,
+    layoutJson: String,
+    onDismiss: () -> Unit,
+    onSaveLayout: (ToolbarLayout) -> Unit,
+    onSaveJson: (String) -> Unit,
+) {
+    var advancedMode by remember { mutableStateOf(false) }
+
+    if (advancedMode) {
+        ToolbarJsonEditor(
+            json = layoutJson,
+            onDismiss = onDismiss,
+            onSave = onSaveJson,
+            onSimpleMode = { advancedMode = false },
+        )
+    } else {
+        ToolbarSimpleEditor(
+            layout = layout,
+            onDismiss = onDismiss,
+            onSave = onSaveLayout,
+            onAdvancedMode = { advancedMode = true },
+        )
+    }
+}
+
+@Composable
+private fun ToolbarSimpleEditor(
+    layout: ToolbarLayout,
+    onDismiss: () -> Unit,
+    onSave: (ToolbarLayout) -> Unit,
+    onAdvancedMode: () -> Unit,
+) {
+    // Build assignment map from current layout (built-in keys only)
+    val row1BuiltIns = remember(layout) {
+        layout.row1.filterIsInstance<ToolbarItem.BuiltIn>().map { it.key }.toSet()
+    }
+    val row2BuiltIns = remember(layout) {
+        layout.row2.filterIsInstance<ToolbarItem.BuiltIn>().map { it.key }.toSet()
+    }
+
+    var assignments by remember(layout) {
+        mutableStateOf(
+            ToolbarKey.entries.associateWith { key ->
+                when (key) {
+                    in row1BuiltIns -> KeyAssignment.ROW1
+                    in row2BuiltIns -> KeyAssignment.ROW2
+                    else -> KeyAssignment.OFF
+                }
+            }
+        )
+    }
+
+    // Track whether layout has custom keys (can't be edited in simple mode)
+    val hasCustomKeys = remember(layout) {
+        layout.rows.any { row -> row.any { it is ToolbarItem.Custom } }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Keyboard toolbar") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "Assign each key to Row 1, Row 2, or Off",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+
+                if (hasCustomKeys) {
+                    Text(
+                        text = "Custom keys are preserved. Use Edit JSON for full control.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                }
+
+                Text(
+                    "Function keys",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                )
+                ToolbarKey.entries.filter { it.isAction || it.isModifier }.forEach { key ->
+                    ToolbarKeyRow(
+                        label = key.label,
+                        assignment = assignments[key] ?: KeyAssignment.OFF,
+                        onAssign = { assignments = assignments + (key to it) },
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    "Symbols",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+                ToolbarKey.entries.filter { !it.isAction && !it.isModifier }.forEach { key ->
+                    ToolbarKeyRow(
+                        label = key.label,
+                        assignment = assignments[key] ?: KeyAssignment.OFF,
+                        onAssign = { assignments = assignments + (key to it) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                // Preserve custom keys in their original rows
+                val customRow1 = layout.row1.filterIsInstance<ToolbarItem.Custom>()
+                val customRow2 = layout.row2.filterIsInstance<ToolbarItem.Custom>()
+                val newRow1 = ToolbarKey.entries
+                    .filter { assignments[it] == KeyAssignment.ROW1 }
+                    .map { ToolbarItem.BuiltIn(it) } + customRow1
+                val newRow2 = ToolbarKey.entries
+                    .filter { assignments[it] == KeyAssignment.ROW2 }
+                    .map { ToolbarItem.BuiltIn(it) } + customRow2
+                onSave(ToolbarLayout(listOf(newRow1, newRow2)))
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = {
+                    assignments = ToolbarKey.entries.associateWith { key ->
+                        when (key) {
+                            in ToolbarKey.DEFAULT_ROW1 -> KeyAssignment.ROW1
+                            in ToolbarKey.DEFAULT_ROW2 -> KeyAssignment.ROW2
+                            else -> KeyAssignment.OFF
+                        }
+                    }
+                }) {
+                    Text("Reset")
+                }
+                TextButton(onClick = onAdvancedMode) {
+                    Text("Edit JSON")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ToolbarJsonEditor(
+    json: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+    onSimpleMode: () -> Unit,
+) {
+    var text by remember(json) { mutableStateOf(json) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit toolbar JSON") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "String = built-in key ID, Object = custom key {\"label\": \"...\", \"send\": \"...\"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = {
+                        text = it
+                        error = null
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    textStyle = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                    ),
+                    isError = error != null,
+                    supportingText = error?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Built-in IDs: keyboard, esc, tab, shift, ctrl, alt, arrow_left, arrow_up, arrow_down, arrow_right, sym_pipe, sym_tilde, sym_slash, sym_dash, sym_underscore, sym_equals, sym_plus, sym_backslash, sym_squote, sym_dquote, sym_semicolon, sym_colon, sym_bang, sym_question, sym_at, sym_hash, sym_dollar, sym_percent, sym_caret, sym_amp, sym_star, sym_lparen, sym_rparen, sym_lbracket, sym_rbracket, sym_lbrace, sym_rbrace, sym_lt, sym_gt, sym_backtick",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 9.sp,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val validationError = ToolbarLayout.validate(text)
+                if (validationError != null) {
+                    error = validationError
+                } else {
+                    onSave(text)
+                }
+            }) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = {
+                    text = ToolbarLayout.DEFAULT.toJson()
+                    error = null
+                }) {
+                    Text("Reset")
+                }
+                TextButton(onClick = onSimpleMode) {
+                    Text("Simple")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun ToolbarKeyRow(
+    label: String,
+    assignment: KeyAssignment,
+    onAssign: (KeyAssignment) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+        KeyAssignment.entries.forEach { option ->
+            FilterChip(
+                selected = assignment == option,
+                onClick = { onAssign(option) },
+                label = {
+                    Text(
+                        when (option) {
+                            KeyAssignment.ROW1 -> "R1"
+                            KeyAssignment.ROW2 -> "R2"
+                            KeyAssignment.OFF -> "Off"
+                        },
+                        fontSize = 11.sp,
+                    )
+                },
+                modifier = Modifier.padding(horizontal = 2.dp),
+            )
+        }
+    }
 }

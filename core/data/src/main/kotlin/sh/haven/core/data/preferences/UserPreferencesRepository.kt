@@ -23,6 +23,10 @@ class UserPreferencesRepository @Inject constructor(
     private val reticulumHostKey = stringPreferencesKey("reticulum_host")
     private val reticulumPortKey = intPreferencesKey("reticulum_port")
     private val terminalColorSchemeKey = stringPreferencesKey("terminal_color_scheme")
+    private val toolbarRowsKey = intPreferencesKey("toolbar_rows") // legacy
+    private val toolbarRow1Key = stringPreferencesKey("toolbar_row1") // legacy
+    private val toolbarRow2Key = stringPreferencesKey("toolbar_row2") // legacy
+    private val toolbarLayoutKey = stringPreferencesKey("toolbar_layout")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -94,6 +98,52 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
+    /**
+     * Toolbar layout as a [ToolbarLayout]. Migrates from legacy row1/row2
+     * comma-separated format on first read if needed.
+     */
+    val toolbarLayout: Flow<ToolbarLayout> = dataStore.data.map { prefs ->
+        val json = prefs[toolbarLayoutKey]
+        if (json != null) {
+            ToolbarLayout.fromJson(json)
+        } else {
+            // Migrate from legacy formats
+            val row1 = prefs[toolbarRow1Key]
+            val row2 = prefs[toolbarRow2Key]
+            if (row1 != null || row2 != null) {
+                ToolbarLayout.fromLegacy(
+                    row1 ?: DEFAULT_TOOLBAR_ROW1,
+                    row2 ?: DEFAULT_TOOLBAR_ROW2,
+                )
+            } else {
+                ToolbarLayout.DEFAULT
+            }
+        }
+    }
+
+    val toolbarLayoutJson: Flow<String> = dataStore.data.map { prefs ->
+        prefs[toolbarLayoutKey] ?: ToolbarLayout.DEFAULT.toJson()
+    }
+
+    suspend fun setToolbarLayout(layout: ToolbarLayout) {
+        dataStore.edit { prefs ->
+            prefs[toolbarLayoutKey] = layout.toJson()
+            // Clear legacy keys
+            prefs.remove(toolbarRow1Key)
+            prefs.remove(toolbarRow2Key)
+            prefs.remove(toolbarRowsKey)
+        }
+    }
+
+    suspend fun setToolbarLayoutJson(json: String) {
+        dataStore.edit { prefs ->
+            prefs[toolbarLayoutKey] = json
+            prefs.remove(toolbarRow1Key)
+            prefs.remove(toolbarRow2Key)
+            prefs.remove(toolbarRowsKey)
+        }
+    }
+
     val terminalColorScheme: Flow<TerminalColorScheme> = dataStore.data.map { prefs ->
         TerminalColorScheme.fromString(prefs[terminalColorSchemeKey])
     }
@@ -155,7 +205,10 @@ class UserPreferencesRepository @Inject constructor(
         const val DEFAULT_FONT_SIZE = 14
         const val MIN_FONT_SIZE = 8
         const val MAX_FONT_SIZE = 32
+        const val DEFAULT_TOOLBAR_ROWS = 2 // legacy
         const val DEFAULT_RETICULUM_HOST = "127.0.0.1"
         const val DEFAULT_RETICULUM_PORT = 37428
+        const val DEFAULT_TOOLBAR_ROW1 = "keyboard,esc,tab,shift,ctrl,alt" // legacy
+        const val DEFAULT_TOOLBAR_ROW2 = "arrow_left,arrow_up,arrow_down,arrow_right,sym_pipe,sym_tilde,sym_slash,sym_backslash,sym_backtick" // legacy
     }
 }

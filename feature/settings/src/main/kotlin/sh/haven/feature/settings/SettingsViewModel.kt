@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import sh.haven.core.data.preferences.ToolbarLayout
 import sh.haven.core.data.preferences.UserPreferencesRepository
 import sh.haven.core.security.BiometricAuthenticator
 import javax.inject.Inject
@@ -56,6 +57,20 @@ class SettingsViewModel @Inject constructor(
                 UserPreferencesRepository.TerminalColorScheme.HAVEN,
             )
 
+    val toolbarLayout: StateFlow<ToolbarLayout> = preferencesRepository.toolbarLayout
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            ToolbarLayout.DEFAULT,
+        )
+
+    val toolbarLayoutJson: StateFlow<String> = preferencesRepository.toolbarLayoutJson
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            ToolbarLayout.DEFAULT.toJson(),
+        )
+
     fun setBiometricEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setBiometricEnabled(enabled)
@@ -83,6 +98,18 @@ class SettingsViewModel @Inject constructor(
     fun setTerminalColorScheme(scheme: UserPreferencesRepository.TerminalColorScheme) {
         viewModelScope.launch {
             preferencesRepository.setTerminalColorScheme(scheme)
+        }
+    }
+
+    fun setToolbarLayout(layout: ToolbarLayout) {
+        viewModelScope.launch {
+            preferencesRepository.setToolbarLayout(layout)
+        }
+    }
+
+    fun setToolbarLayoutJson(json: String) {
+        viewModelScope.launch {
+            preferencesRepository.setToolbarLayoutJson(json)
         }
     }
 }
