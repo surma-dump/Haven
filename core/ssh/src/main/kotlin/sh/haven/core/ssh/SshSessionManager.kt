@@ -50,6 +50,8 @@ class SshSessionManager @Inject constructor(
         val sessionManager: SessionManager = SessionManager.NONE,
         val chosenSessionName: String? = null,
         val activeForwards: List<PortForwardInfo> = emptyList(),
+        /** Session ID of the jump host session, if this connection goes through one. */
+        val jumpSessionId: String? = null,
     ) {
         enum class Status { CONNECTING, CONNECTED, RECONNECTING, DISCONNECTED, ERROR }
     }
@@ -241,8 +243,20 @@ class SshSessionManager @Inject constructor(
             if (_sessions.value[sessionId] == null) return
 
             try {
+                // If this session goes through a jump host, get its proxy
+                val jumpSid = _sessions.value[sessionId]?.jumpSessionId
+                val proxy = if (jumpSid != null) {
+                    val jumpSession = _sessions.value[jumpSid]
+                    if (jumpSession?.status != SessionState.Status.CONNECTED) {
+                        Log.w(TAG, "Jump host $jumpSid not connected — cannot reconnect $sessionId")
+                        delayMs = (delayMs * 2).coerceAtMost(RECONNECT_MAX_DELAY_MS)
+                        continue
+                    }
+                    createProxyJump(jumpSid)
+                } else null
+
                 val newClient = SshClient()
-                val hostKeyEntry = newClient.connectBlocking(config)
+                val hostKeyEntry = newClient.connectBlocking(config, proxy = proxy)
 
                 // Silent TOFU on reconnect: auto-accept new, abort on change
                 val hkResult = runBlocking { hostKeyVerifier.verify(hostKeyEntry) }
@@ -303,8 +317,14 @@ class SshSessionManager @Inject constructor(
 
     fun removeSession(sessionId: String) {
         val session = _sessions.value[sessionId] ?: return
+        // Cascade: disconnect any sessions that use this one as a jump host
+        val dependents = _sessions.value.values.filter { it.jumpSessionId == sessionId }
         _sessions.update { it - sessionId }
         ioExecutor.execute { tearDown(session) }
+        for (dep in dependents) {
+            Log.d(TAG, "Cascading disconnect from jump host $sessionId to ${dep.sessionId}")
+            removeSession(dep.sessionId)
+        }
     }
 
     fun getSession(sessionId: String): SessionState? = _sessions.value[sessionId]
@@ -363,6 +383,24 @@ class SshSessionManager @Inject constructor(
             val existing = map[sessionId] ?: return@update map
             map + (sessionId to existing.copy(chosenSessionName = name))
         }
+    }
+
+    fun setJumpSessionId(sessionId: String, jumpSessionId: String) {
+        _sessions.update { map ->
+            val existing = map[sessionId] ?: return@update map
+            map + (sessionId to existing.copy(jumpSessionId = jumpSessionId))
+        }
+    }
+
+    /**
+     * Create a [ProxyJump] from a connected jump host session.
+     * Returns null if the session doesn't exist or isn't connected.
+     */
+    fun createProxyJump(jumpSessionId: String): ProxyJump? {
+        val jumpSession = _sessions.value[jumpSessionId] ?: return null
+        if (jumpSession.status != SessionState.Status.CONNECTED) return null
+        val jschSession = jumpSession.client.jschSession ?: return null
+        return ProxyJump(jschSession)
     }
 
     /**

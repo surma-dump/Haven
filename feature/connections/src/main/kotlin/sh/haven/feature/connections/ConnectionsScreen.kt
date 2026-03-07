@@ -155,6 +155,7 @@ fun ConnectionsScreen(
         ConnectionEditDialog(
             discoveredDestinations = discoveredDestinations,
             discoveredHosts = discoveredHosts,
+            sshProfiles = connections,
             onDismiss = { showAddDialog = false },
             onSave = { profile ->
                 viewModel.saveConnection(profile)
@@ -168,6 +169,7 @@ fun ConnectionsScreen(
             existing = profile,
             discoveredDestinations = discoveredDestinations,
             discoveredHosts = discoveredHosts,
+            sshProfiles = connections,
             onDismiss = { editingProfile = null },
             onSave = { updated ->
                 viewModel.saveConnection(updated)
@@ -321,35 +323,60 @@ fun ConnectionsScreen(
             if (connections.isEmpty()) {
                 EmptyState()
             } else {
+                // Build tree: top-level profiles first, then dependents nested beneath
+                val profileMap = connections.associateBy { it.id }
+                val dependentsByJump = connections
+                    .filter { it.jumpProfileId != null && it.jumpProfileId in profileMap }
+                    .groupBy { it.jumpProfileId!! }
+                val renderedAsChild = dependentsByJump.values.flatten().map { it.id }.toSet()
+
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(connections, key = { it.id }) { profile ->
-                        val profileStatus = profileStatuses[profile.id]
-                        ConnectionListItem(
-                            profile = profile,
-                            profileStatus = profileStatus,
-                            isConnecting = connectingProfileId == profile.id,
-                            hasKeys = sshKeys.isNotEmpty(),
-                            onTap = {
-                                if (profileStatus == ProfileStatus.CONNECTED) {
-                                    onNavigateToTerminal(profile.id)
-                                } else if (profile.isReticulum) {
-                                    viewModel.connect(profile, "")
-                                } else if (sshKeys.isNotEmpty()) {
-                                    viewModel.connectWithKey(profile)
-                                } else {
-                                    connectingProfile = profile
-                                }
-                            },
-                            onRename = { newLabel ->
-                                viewModel.saveConnection(profile.copy(label = newLabel))
-                            },
-                            onEdit = { editingProfile = profile },
-                            onDelete = { viewModel.deleteConnection(profile.id) },
-                            onDisconnect = { viewModel.disconnect(profile.id) },
-                            onDeployKey = { deployingProfile = profile },
-                            onConnectWithPassword = { connectingProfile = profile },
-                            onPortForwards = { portForwardProfile = profile },
-                        )
+                    // Top-level: no jump host, or jump host not in saved profiles (orphan)
+                    val topLevel = connections.filter { it.id !in renderedAsChild }
+                    topLevel.forEach { profile ->
+                        item(key = profile.id) {
+                            ConnectionTreeItem(
+                                profile = profile,
+                                indent = 0,
+                                isLastChild = false,
+                                profileStatuses = profileStatuses,
+                                isConnecting = connectingProfileId == profile.id,
+                                hasKeys = sshKeys.isNotEmpty(),
+                                hasDependents = profile.id in dependentsByJump,
+                                jumpHostLabel = profile.jumpProfileId?.let { profileMap[it]?.label },
+                                onTap = { onTapProfile(profile, profileStatuses[profile.id], sshKeys, onNavigateToTerminal, viewModel) { connectingProfile = profile } },
+                                onRename = { newLabel -> viewModel.saveConnection(profile.copy(label = newLabel)) },
+                                onEdit = { editingProfile = profile },
+                                onDelete = { viewModel.deleteConnection(profile.id) },
+                                onDisconnect = { viewModel.disconnect(profile.id) },
+                                onDeployKey = { deployingProfile = profile },
+                                onConnectWithPassword = { connectingProfile = profile },
+                                onPortForwards = { portForwardProfile = profile },
+                            )
+                        }
+                        val deps = dependentsByJump[profile.id].orEmpty()
+                        deps.forEachIndexed { index, dep ->
+                            item(key = dep.id) {
+                                ConnectionTreeItem(
+                                    profile = dep,
+                                    indent = 1,
+                                    isLastChild = index == deps.lastIndex,
+                                    profileStatuses = profileStatuses,
+                                    isConnecting = connectingProfileId == dep.id,
+                                    hasKeys = sshKeys.isNotEmpty(),
+                                    hasDependents = false,
+                                    jumpHostLabel = null,
+                                    onTap = { onTapProfile(dep, profileStatuses[dep.id], sshKeys, onNavigateToTerminal, viewModel) { connectingProfile = dep } },
+                                    onRename = { newLabel -> viewModel.saveConnection(dep.copy(label = newLabel)) },
+                                    onEdit = { editingProfile = dep },
+                                    onDelete = { viewModel.deleteConnection(dep.id) },
+                                    onDisconnect = { viewModel.disconnect(dep.id) },
+                                    onDeployKey = { deployingProfile = dep },
+                                    onConnectWithPassword = { connectingProfile = dep },
+                                    onPortForwards = { portForwardProfile = dep },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -357,13 +384,38 @@ fun ConnectionsScreen(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ConnectionListItem(
+private fun onTapProfile(
     profile: ConnectionProfile,
     profileStatus: ProfileStatus?,
+    sshKeys: List<sh.haven.core.data.db.entities.SshKey>,
+    onNavigateToTerminal: (String) -> Unit,
+    viewModel: ConnectionsViewModel,
+    showPasswordDialog: () -> Unit,
+) {
+    if (profileStatus == ProfileStatus.CONNECTED) {
+        // Ensure shell is open (jump host sessions may not have one yet)
+        viewModel.ensureShellForProfile(profile.id)
+        onNavigateToTerminal(profile.id)
+    } else if (profile.isReticulum) {
+        viewModel.connect(profile, "")
+    } else if (sshKeys.isNotEmpty()) {
+        viewModel.connectWithKey(profile)
+    } else {
+        showPasswordDialog()
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ConnectionTreeItem(
+    profile: ConnectionProfile,
+    indent: Int,
+    isLastChild: Boolean,
+    profileStatuses: Map<String, ProfileStatus>,
     isConnecting: Boolean,
     hasKeys: Boolean,
+    hasDependents: Boolean,
+    jumpHostLabel: String?,
     onTap: () -> Unit,
     onRename: (String) -> Unit,
     onEdit: () -> Unit,
@@ -373,6 +425,7 @@ private fun ConnectionListItem(
     onConnectWithPassword: () -> Unit,
     onPortForwards: () -> Unit,
 ) {
+    val profileStatus = profileStatuses[profile.id]
     var showMenu by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
 
@@ -388,44 +441,77 @@ private fun ConnectionListItem(
     }
 
     Box {
-        ListItem(
-            headlineContent = { Text(profile.label) },
-            supportingContent = {
-                if (profile.isReticulum) {
-                    Text("RNS: ${profile.destinationHash?.take(12) ?: ""}... via ${profile.reticulumHost}:${profile.reticulumPort}")
-                } else {
-                    Text("${profile.username}@${profile.host}:${profile.port}")
-                }
-            },
-            leadingContent = {
-                when {
-                    isConnecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    profileStatus == ProfileStatus.RECONNECTING -> CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
-                    profileStatus == ProfileStatus.CONNECTED -> Icon(
-                        Icons.Filled.Circle,
-                        contentDescription = "Connected",
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(12.dp),
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (indent > 0) {
+                // Tree connector
+                val lineColor = MaterialTheme.colorScheme.outlineVariant
+                androidx.compose.foundation.Canvas(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(56.dp)
+                        .padding(start = 12.dp),
+                ) {
+                    val midX = size.width / 2
+                    val midY = size.height / 2
+                    // Vertical line (half or full depending on position)
+                    drawLine(
+                        color = lineColor,
+                        start = androidx.compose.ui.geometry.Offset(midX, 0f),
+                        end = androidx.compose.ui.geometry.Offset(midX, if (isLastChild) midY else size.height),
+                        strokeWidth = 2f,
                     )
-                    profileStatus == ProfileStatus.ERROR -> Icon(
-                        Icons.Filled.Circle,
-                        contentDescription = "Error",
-                        tint = Color(0xFFF44336),
-                        modifier = Modifier.size(12.dp),
-                    )
-                    else -> Icon(
-                        Icons.Filled.Circle,
-                        contentDescription = "Disconnected",
-                        tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.size(12.dp),
+                    // Horizontal branch
+                    drawLine(
+                        color = lineColor,
+                        start = androidx.compose.ui.geometry.Offset(midX, midY),
+                        end = androidx.compose.ui.geometry.Offset(size.width, midY),
+                        strokeWidth = 2f,
                     )
                 }
-            },
-            modifier = Modifier.combinedClickable(
-                onClick = onTap,
-                onLongClick = { showMenu = true },
-            ),
-        )
+            }
+
+            ListItem(
+                headlineContent = { Text(profile.label) },
+                supportingContent = {
+                    if (profile.isReticulum) {
+                        Text("RNS: ${profile.destinationHash?.take(12) ?: ""}... via ${profile.reticulumHost}:${profile.reticulumPort}")
+                    } else {
+                        val suffix = if (jumpHostLabel != null && indent == 0) " via $jumpHostLabel" else ""
+                        Text("${profile.username}@${profile.host}:${profile.port}$suffix")
+                    }
+                },
+                leadingContent = {
+                    when {
+                        isConnecting -> CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        profileStatus == ProfileStatus.RECONNECTING -> CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                        profileStatus == ProfileStatus.CONNECTED -> Icon(
+                            Icons.Filled.Circle,
+                            contentDescription = "Connected",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(12.dp),
+                        )
+                        profileStatus == ProfileStatus.ERROR -> Icon(
+                            Icons.Filled.Circle,
+                            contentDescription = "Error",
+                            tint = Color(0xFFF44336),
+                            modifier = Modifier.size(12.dp),
+                        )
+                        else -> Icon(
+                            Icons.Filled.Circle,
+                            contentDescription = "Disconnected",
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .combinedClickable(
+                        onClick = onTap,
+                        onLongClick = { showMenu = true },
+                    ),
+            )
+        }
 
         DropdownMenu(
             expanded = showMenu,

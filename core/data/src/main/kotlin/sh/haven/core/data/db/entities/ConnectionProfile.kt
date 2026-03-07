@@ -21,6 +21,7 @@ data class ConnectionProfile(
     val destinationHash: String? = null,
     val reticulumHost: String = "127.0.0.1",
     val reticulumPort: Int = 37428,
+    val jumpProfileId: String? = null,
 ) {
     enum class AuthType {
         PASSWORD,

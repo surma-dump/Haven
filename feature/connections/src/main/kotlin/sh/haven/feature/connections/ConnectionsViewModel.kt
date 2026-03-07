@@ -301,6 +301,16 @@ class ConnectionsViewModel @Inject constructor(
             val sessionId = sshSessionManager.registerSession(profile.id, profile.label, client)
 
             try {
+                // If profile has a jump host, establish that connection first
+                val jumpProfileId = profile.jumpProfileId
+                val jumpSessionId = if (jumpProfileId != null) {
+                    connectJumpHost(jumpProfileId, password)
+                } else null
+
+                if (jumpSessionId != null) {
+                    sshSessionManager.setJumpSessionId(sessionId, jumpSessionId)
+                }
+
                 val sshSessionMgr = withContext(Dispatchers.IO) {
                     val authMethod = resolveAuthMethod(profile, password)
                     val config = ConnectionConfig(
@@ -309,7 +319,10 @@ class ConnectionsViewModel @Inject constructor(
                         username = profile.username,
                         authMethod = authMethod,
                     )
-                    val hostKeyEntry = client.connect(config)
+
+                    // Create proxy through jump host if applicable
+                    val proxy = jumpSessionId?.let { sshSessionManager.createProxyJump(it) }
+                    val hostKeyEntry = client.connect(config, proxy = proxy)
 
                     // TOFU host key verification
                     when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
@@ -533,6 +546,70 @@ class ConnectionsViewModel @Inject constructor(
         sshSessionManager.removeSession(sel.sessionId)
     }
 
+    /**
+     * Connect to a jump host profile, reusing an existing connected session if available.
+     * Returns the sessionId of the connected jump host session.
+     */
+    private suspend fun connectJumpHost(jumpProfileId: String, password: String): String {
+        // Reuse existing connected session for this jump profile
+        val existing = sshSessionManager.getSessionsForProfile(jumpProfileId)
+            .firstOrNull { it.status == SshSessionManager.SessionState.Status.CONNECTED }
+        if (existing != null) {
+            Log.d(TAG, "Reusing existing jump host session ${existing.sessionId}")
+            return existing.sessionId
+        }
+
+        val jumpProfile = repository.getById(jumpProfileId)
+            ?: throw Exception("Jump host profile not found")
+
+        val jumpClient = SshClient()
+        val jumpSessionId = sshSessionManager.registerSession(jumpProfileId, "Jump: ${jumpProfile.label}", jumpClient)
+
+        withContext(Dispatchers.IO) {
+            val authMethod = resolveAuthMethod(jumpProfile, password)
+            val config = ConnectionConfig(
+                host = jumpProfile.host,
+                port = jumpProfile.port,
+                username = jumpProfile.username,
+                authMethod = authMethod,
+            )
+            val hostKeyEntry = jumpClient.connect(config)
+
+            // TOFU for jump host
+            when (val result = hostKeyVerifier.verify(hostKeyEntry)) {
+                is HostKeyResult.Trusted -> {}
+                is HostKeyResult.NewHost -> {
+                    val deferred = CompletableDeferred<Boolean>()
+                    _hostKeyPrompt.value = HostKeyPrompt.NewHost(result.entry, deferred)
+                    if (!deferred.await()) {
+                        jumpClient.disconnect()
+                        throw Exception("Jump host key rejected by user")
+                    }
+                    hostKeyVerifier.accept(result.entry)
+                }
+                is HostKeyResult.KeyChanged -> {
+                    val deferred = CompletableDeferred<Boolean>()
+                    _hostKeyPrompt.value = HostKeyPrompt.KeyChanged(
+                        oldFingerprint = result.old.fingerprint,
+                        entry = result.new,
+                        deferred = deferred,
+                    )
+                    if (!deferred.await()) {
+                        jumpClient.disconnect()
+                        throw Exception("Jump host key change rejected by user")
+                    }
+                    hostKeyVerifier.accept(result.new)
+                }
+            }
+
+            sshSessionManager.storeConnectionConfig(jumpSessionId, config, SessionManager.NONE)
+        }
+
+        sshSessionManager.updateStatus(jumpSessionId, SshSessionManager.SessionState.Status.CONNECTED)
+        Log.d(TAG, "Jump host connected: ${jumpProfile.label} ($jumpSessionId)")
+        return jumpSessionId
+    }
+
     private suspend fun finishConnect(sessionId: String, profileId: String) {
         withContext(Dispatchers.IO) {
             sshSessionManager.openShellForSession(sessionId)
@@ -622,6 +699,63 @@ class ConnectionsViewModel @Inject constructor(
             append("-----END PRIVATE KEY-----\n")
         }
         return pem.toByteArray()
+    }
+
+    /**
+     * Ensure a connected session for a profile has a shell channel open.
+     * Jump host sessions are connected but have no shell until the user opens one.
+     * Runs the full session manager (tmux/screen) detection flow.
+     */
+    fun ensureShellForProfile(profileId: String) {
+        val session = sshSessionManager.getSessionsForProfile(profileId)
+            .firstOrNull { it.status == SshSessionManager.SessionState.Status.CONNECTED }
+            ?: return
+        if (session.shellChannel != null) return
+
+        viewModelScope.launch {
+            _connectingProfileId.value = profileId
+            try {
+                // Set up session manager preference
+                val prefSessionMgr = preferencesRepository.sessionManager.first()
+                val sshSessionMgr = prefSessionMgr.toSshSessionManager()
+                val config = session.connectionConfig
+                if (config != null) {
+                    sshSessionManager.storeConnectionConfig(session.sessionId, config, sshSessionMgr)
+                }
+
+                // Check for existing tmux/screen sessions
+                val listCmd = sshSessionMgr.listCommand
+                if (listCmd != null) {
+                    val existingSessions = withContext(Dispatchers.IO) {
+                        try {
+                            val result = session.client.execCommand(listCmd)
+                            if (result.exitStatus == 0) {
+                                SessionManager.parseSessionList(sshSessionMgr, result.stdout)
+                            } else emptyList()
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                    }
+                    if (existingSessions.isNotEmpty()) {
+                        _sessionSelection.value = SessionSelection(
+                            sessionId = session.sessionId,
+                            profileId = profileId,
+                            managerLabel = sshSessionMgr.label,
+                            sessionNames = existingSessions,
+                            manager = sshSessionMgr,
+                        )
+                        _connectingProfileId.value = null
+                        return@launch
+                    }
+                }
+
+                finishConnect(session.sessionId, profileId)
+            } catch (e: Exception) {
+                _error.value = e.message ?: "Failed to open shell"
+            } finally {
+                _connectingProfileId.value = null
+            }
+        }
     }
 
     // --- Port Forward Management ---

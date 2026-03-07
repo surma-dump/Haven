@@ -8,11 +8,23 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -27,12 +39,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import sh.haven.core.data.db.entities.ConnectionProfile
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectionEditDialog(
     existing: ConnectionProfile? = null,
     discoveredDestinations: List<ConnectionsViewModel.DiscoveredDestination> = emptyList(),
     discoveredHosts: List<DiscoveredHost> = emptyList(),
+    sshProfiles: List<ConnectionProfile> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (ConnectionProfile) -> Unit,
 ) {
@@ -42,6 +55,7 @@ fun ConnectionEditDialog(
     var port by remember { mutableStateOf(existing?.port?.toString() ?: "22") }
     var username by remember { mutableStateOf(existing?.username ?: "") }
     var destinationHash by remember { mutableStateOf(existing?.destinationHash ?: "") }
+    var jumpProfileId by remember { mutableStateOf(existing?.jumpProfileId) }
     var localSideband by remember {
         mutableStateOf(
             existing == null ||
@@ -162,6 +176,72 @@ fun ConnectionEditDialog(
                             modifier = Modifier.width(80.dp),
                         )
                     }
+
+                    // Jump host selector — exclude self to prevent circular references
+                    val jumpCandidates = sshProfiles.filter { it.id != existing?.id && it.isSsh }
+                    if (jumpCandidates.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        var jumpExpanded by remember { mutableStateOf(false) }
+                        val selectedJump = jumpCandidates.firstOrNull { it.id == jumpProfileId }
+
+                        ExposedDropdownMenuBox(
+                            expanded = jumpExpanded,
+                            onExpandedChange = { jumpExpanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = selectedJump?.label ?: "None (direct)",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Jump Host (-J)") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = jumpExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                            )
+                            ExposedDropdownMenu(
+                                expanded = jumpExpanded,
+                                onDismissRequest = { jumpExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("None (direct)") },
+                                    onClick = {
+                                        jumpProfileId = null
+                                        jumpExpanded = false
+                                    },
+                                )
+                                jumpCandidates.forEach { candidate ->
+                                    DropdownMenuItem(
+                                        text = { Text(candidate.label) },
+                                        onClick = {
+                                            jumpProfileId = candidate.id
+                                            jumpExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+
+                        // Visual chain indicator
+                        if (selectedJump != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Filled.PhoneAndroid, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(4.dp))
+                                Text(selectedJump.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(4.dp))
+                                Icon(Icons.Filled.Storage, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                 } else {
                     // Discovered destinations — filter by typed prefix, cap at 8
                     val filtered = remember(discoveredDestinations, destinationHash) {
@@ -271,6 +351,7 @@ fun ConnectionEditDialog(
                             username = username,
                             connectionType = "SSH",
                             destinationHash = null,
+                            jumpProfileId = jumpProfileId,
                         )
                     } else {
                         val savedHost = if (localSideband) "127.0.0.1" else rnsHost

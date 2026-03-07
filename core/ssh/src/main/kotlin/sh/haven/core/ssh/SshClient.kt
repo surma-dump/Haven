@@ -5,6 +5,7 @@ import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.ChannelSftp
 import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.JSch
+import com.jcraft.jsch.Proxy
 import com.jcraft.jsch.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,6 +34,10 @@ class SshClient : Closeable {
     val isConnected: Boolean
         get() = session?.isConnected == true
 
+    /** The underlying JSch session, for creating ProxyJump tunnels. */
+    internal val jschSession: Session?
+        get() = session
+
     /**
      * Connect to an SSH server using the given config.
      * This suspends on Dispatchers.IO.
@@ -41,11 +46,13 @@ class SshClient : Closeable {
     suspend fun connect(
         config: ConnectionConfig,
         connectTimeoutMs: Int = 10_000,
+        proxy: Proxy? = null,
     ): KnownHostEntry = withContext(Dispatchers.IO) {
         disconnect()
 
-        val resolvedIp = resolveHost(config.host)
+        val resolvedIp = if (proxy != null) config.host else resolveHost(config.host)
         val sess = jsch.getSession(config.username, resolvedIp, config.port)
+        if (proxy != null) sess.setProxy(proxy)
         // Accept any key at the JSch level; we verify post-connect ourselves (TOFU)
         sess.setConfig("StrictHostKeyChecking", "no")
         // Disable GSSAPI auth — it causes multi-second timeouts on most servers
@@ -143,11 +150,12 @@ class SshClient : Closeable {
      * Same as [connect] but without the coroutine wrapper.
      * Returns the host key as a [KnownHostEntry] for TOFU verification.
      */
-    fun connectBlocking(config: ConnectionConfig, connectTimeoutMs: Int = 10_000): KnownHostEntry {
+    fun connectBlocking(config: ConnectionConfig, connectTimeoutMs: Int = 10_000, proxy: Proxy? = null): KnownHostEntry {
         disconnect()
 
-        val resolvedIp = resolveHost(config.host)
+        val resolvedIp = if (proxy != null) config.host else resolveHost(config.host)
         val sess = jsch.getSession(config.username, resolvedIp, config.port)
+        if (proxy != null) sess.setProxy(proxy)
         sess.setConfig("StrictHostKeyChecking", "no")
         sess.setConfig("PreferredAuthentications", "publickey,keyboard-interactive,password")
         sess.serverAliveInterval = 15_000
