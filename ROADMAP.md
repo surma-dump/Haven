@@ -9,15 +9,17 @@
 - [x] **Bracket paste mode** — Wrap pasted text in `ESC[200~`/`ESC[201~` when DECSET 2004 is enabled, preventing accidental execution of multi-line paste.
 - [x] **Highlighter-style text selection** — Long-press and drag to extend selection like a highlighter pen, with edge-scroll for selecting beyond the visible screen. Mutually exclusive gesture handling for tab swipe, scroll, and selection.
 - [x] **Terminal rendering fix** — Post emulator writes to main thread to prevent concurrent native access during resize, fixing animation scroll corruption.
+- [x] **Keyboard toolbar customization** — Configurable keyboard toolbar with JSON layout support: smaller keys, more keys per row, user-editable layout.
+- [x] **Network discovery** — Automatic LAN discovery of SSH hosts via mDNS/broadcast, shown in the connection creation dialog.
+- [x] **Port forwarding** — Local (`-L`) and remote (`-R`) SSH port forwarding with visual flow diagrams showing tunnel direction. Rules persist across sessions, auto-activate on connect, restore on reconnect. Live add/edit/remove on active sessions with port validation.
 
 ## Near-term
 
-- [ ] **Keyboard toolbar customization** — Smaller keys, more keys per row, user-editable layout, multi-row option (JuiceSSH-style).
 - [ ] **SFTP integration with CWD** — Use OSC 7 working directory to open SFTP browser at the current remote path.
+- [ ] **ProxyJump / multi-hop tunneling** — `ssh -J` style jump hosts: connect through an intermediate SSH server to reach a final destination. Visual chain indicator in the connection editor.
 
 ## Medium-term
 
-- [ ] **Port forwarding** — Local and remote SSH port forwarding (L/R tunnels).
 - [ ] **Agent forwarding** — SSH agent forwarding for key-based authentication to hop hosts.
 - [ ] **Snippet/command library** — Save and recall frequently used commands.
 - [ ] **Connection groups/folders** — Organize saved connections by project or environment.
