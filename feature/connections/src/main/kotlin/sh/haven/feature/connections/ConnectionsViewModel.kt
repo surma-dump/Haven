@@ -173,6 +173,7 @@ class ConnectionsViewModel @Inject constructor(
 
     private val networkDiscovery = NetworkDiscovery(appContext)
     val discoveredHosts: StateFlow<List<DiscoveredHost>> = networkDiscovery.hosts
+    val localVmStatus: StateFlow<LocalVmStatus> = networkDiscovery.localVm
 
     private var periodicRefreshJob: Job? = null
 
@@ -194,6 +195,7 @@ class ConnectionsViewModel @Inject constructor(
     fun startNetworkDiscovery() {
         networkDiscovery.start()
         viewModelScope.launch {
+            networkDiscovery.scanLocalVm()
             networkDiscovery.scanSubnet()
         }
     }

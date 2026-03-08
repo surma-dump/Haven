@@ -25,7 +25,12 @@ data class DiscoveredHost(
     val address: String,
     val hostname: String?,
     val port: Int = 22,
-    val source: String, // "mDNS" or "ARP"
+    val source: String, // "mDNS", "scan", or "localhost"
+)
+
+data class LocalVmStatus(
+    val sshPort: Int? = null,
+    val vncPort: Int? = null,
 )
 
 /**
@@ -37,6 +42,9 @@ class NetworkDiscovery(private val context: Context) {
 
     private val _hosts = MutableStateFlow<List<DiscoveredHost>>(emptyList())
     val hosts: StateFlow<List<DiscoveredHost>> = _hosts.asStateFlow()
+
+    private val _localVm = MutableStateFlow(LocalVmStatus())
+    val localVm: StateFlow<LocalVmStatus> = _localVm.asStateFlow()
 
     private var nsdManager: NsdManager? = null
     private var discoveryListener: NsdManager.DiscoveryListener? = null
@@ -52,6 +60,27 @@ class NetworkDiscovery(private val context: Context) {
         mdnsHosts.clear()
         arpHosts.clear()
         _hosts.value = emptyList()
+        _localVm.value = LocalVmStatus()
+    }
+
+    /**
+     * Probe localhost for SSH/VNC ports commonly used by the Android Linux VM.
+     * The Terminal app auto-forwards guest TCP ports to localhost via vsock.
+     */
+    suspend fun scanLocalVm() {
+        withContext(Dispatchers.IO) {
+            val sshPorts = listOf(8022, 2222, 22)
+            val vncPorts = listOf(5900, 5901, 5902)
+            val sshPort = sshPorts.firstOrNull { probePort("127.0.0.1", it, 200) }
+            val vncPort = vncPorts.firstOrNull { probePort("127.0.0.1", it, 200) }
+            _localVm.value = LocalVmStatus(sshPort = sshPort, vncPort = vncPort)
+            if (sshPort != null) {
+                Log.d(TAG, "Local VM SSH detected on port $sshPort")
+            }
+            if (vncPort != null) {
+                Log.d(TAG, "Local VM VNC detected on port $vncPort")
+            }
+        }
     }
 
     /**
