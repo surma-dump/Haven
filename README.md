@@ -24,15 +24,19 @@
 ---
 
 <p align="center">
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4_connections.png" width="180" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2_connections_ssh.png" width="140" />
   &nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1_terminal.png" width="180" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1_terminal.png" width="140" />
   &nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5_desktop.png" width="180" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5_desktop.png" width="140" />
   &nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6_desktop_fullscreen.png" width="180" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4_host_key.png" width="140" />
   &nbsp;
-  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3_settings.png" width="180" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/6_keys.png" width="140" />
+  &nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3_connections_reticulum.png" width="140" />
+  &nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7_settings.png" width="140" />
 </p>
 
 ---
