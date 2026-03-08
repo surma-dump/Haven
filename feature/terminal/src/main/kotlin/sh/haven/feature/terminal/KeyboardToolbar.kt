@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -64,6 +65,7 @@ fun KeyboardToolbar(
     layout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onToggleCtrl: () -> Unit = {},
     onToggleAlt: () -> Unit = {},
+    onVncTap: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var shiftActive by remember { mutableStateOf(false) }
@@ -75,7 +77,7 @@ fun KeyboardToolbar(
         modifier = modifier,
     ) {
         Column {
-            for (row in layout.rows) {
+            layout.rows.forEachIndexed { index, row ->
                 if (row.isNotEmpty()) {
                     ToolbarRow(
                         items = row,
@@ -90,6 +92,7 @@ fun KeyboardToolbar(
                         onToggleAlt = onToggleAlt,
                         onToggleShift = { shiftActive = !shiftActive },
                         onShiftUsed = { shiftActive = false },
+                        onVncTap = if (index == 0) onVncTap else null,
                     )
                 }
             }
@@ -111,6 +114,7 @@ private fun ToolbarRow(
     onToggleAlt: () -> Unit,
     onToggleShift: () -> Unit,
     onShiftUsed: () -> Unit,
+    onVncTap: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -120,20 +124,26 @@ private fun ToolbarRow(
     ) {
         for (item in items) {
             when (item) {
-                is ToolbarItem.BuiltIn -> BuiltInKey(
-                    key = item.key,
-                    onSendBytes = onSendBytes,
-                    focusRequester = focusRequester,
-                    ctrlActive = ctrlActive,
-                    altActive = altActive,
-                    shiftActive = shiftActive,
-                    imeVisible = imeVisible,
-                    view = view,
-                    onToggleCtrl = onToggleCtrl,
-                    onToggleAlt = onToggleAlt,
-                    onToggleShift = onToggleShift,
-                    onShiftUsed = onShiftUsed,
-                )
+                is ToolbarItem.BuiltIn -> {
+                    BuiltInKey(
+                        key = item.key,
+                        onSendBytes = onSendBytes,
+                        focusRequester = focusRequester,
+                        ctrlActive = ctrlActive,
+                        altActive = altActive,
+                        shiftActive = shiftActive,
+                        imeVisible = imeVisible,
+                        view = view,
+                        onToggleCtrl = onToggleCtrl,
+                        onToggleAlt = onToggleAlt,
+                        onToggleShift = onToggleShift,
+                        onShiftUsed = onShiftUsed,
+                    )
+                    // VNC icon right after keyboard toggle
+                    if (item.key == ToolbarKey.KEYBOARD && onVncTap != null) {
+                        ToolbarIconButton(Icons.Filled.DesktopWindows, "VNC Desktop", onVncTap)
+                    }
+                }
                 is ToolbarItem.Custom -> {
                     SymbolButton(item.label) {
                         val bytes = item.send.toByteArray()

@@ -58,6 +58,9 @@ class BackupService @Inject constructor(
                 put("reticulumPort", p.reticulumPort)
                 put("jumpProfileId", p.jumpProfileId ?: JSONObject.NULL)
                 put("sshOptions", p.sshOptions ?: JSONObject.NULL)
+                put("vncPort", p.vncPort ?: JSONObject.NULL)
+                put("vncPassword", p.vncPassword ?: JSONObject.NULL)
+                put("vncSshForward", p.vncSshForward)
             })
         }
         json.put("connections", connections)
@@ -186,6 +189,9 @@ class BackupService @Inject constructor(
                             reticulumPort = c.optInt("reticulumPort", 37428),
                             jumpProfileId = c.optStringOrNull("jumpProfileId"),
                             sshOptions = c.optStringOrNull("sshOptions"),
+                            vncPort = c.optIntOrNull("vncPort"),
+                            vncPassword = c.optStringOrNull("vncPassword"),
+                            vncSshForward = c.optBoolean("vncSshForward", true),
                         ),
                     )
                     count++
@@ -315,4 +321,8 @@ private fun JSONObject.optStringOrNull(key: String): String? {
 
 private fun JSONObject.optLongOrNull(key: String): Long? {
     return if (isNull(key)) null else optLong(key)
+}
+
+private fun JSONObject.optIntOrNull(key: String): Int? {
+    return if (isNull(key)) null else optInt(key)
 }

@@ -18,7 +18,7 @@ import sh.haven.core.data.db.entities.SshKey
         SshKey::class,
         PortForwardRule::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -89,6 +89,14 @@ abstract class HavenDatabase : RoomDatabase() {
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE connection_profiles ADD COLUMN sshOptions TEXT")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE connection_profiles ADD COLUMN vncPort INTEGER")
+                db.execSQL("ALTER TABLE connection_profiles ADD COLUMN vncPassword TEXT")
+                db.execSQL("ALTER TABLE connection_profiles ADD COLUMN vncSshForward INTEGER NOT NULL DEFAULT 1")
             }
         }
     }

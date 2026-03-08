@@ -1,0 +1,108 @@
+package sh.haven.core.vnc
+
+import sh.haven.core.vnc.protocol.Encodable
+import sh.haven.core.vnc.protocol.FramebufferUpdateRequest
+import sh.haven.core.vnc.protocol.KeyEvent
+import sh.haven.core.vnc.protocol.PixelFormat
+import sh.haven.core.vnc.protocol.PointerEvent
+import sh.haven.core.vnc.protocol.ClientCutText
+import sh.haven.core.vnc.protocol.ProtocolVersion
+import sh.haven.core.vnc.protocol.ServerInit
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.locks.ReentrantLock
+
+/**
+ * Holds the state of an active VNC session.
+ */
+class VncSession(
+    val config: VncConfig,
+    val inputStream: InputStream,
+    val outputStream: OutputStream,
+) {
+    var protocolVersion: ProtocolVersion? = null
+    var serverInit: ServerInit? = null
+    var pixelFormat: PixelFormat? = null
+
+    @Volatile var framebufferWidth: Int = 0
+    @Volatile var framebufferHeight: Int = 0
+
+    private val outputLock = ReentrantLock(true)
+    private val fbLock = ReentrantLock()
+    private val fbCondition = fbLock.newCondition()
+    @Volatile private var fbUpdated = false
+
+    // Mouse state
+    private val buttons = BooleanArray(8)
+    private var mouseX = 0
+    private var mouseY = 0
+
+    fun waitForFramebufferUpdate() {
+        fbLock.lock()
+        try {
+            while (!fbUpdated) fbCondition.await()
+            fbUpdated = false
+        } finally {
+            fbLock.unlock()
+        }
+    }
+
+    fun framebufferUpdated() {
+        fbLock.lock()
+        try {
+            fbUpdated = true
+            fbCondition.signalAll()
+        } finally {
+            fbLock.unlock()
+        }
+    }
+
+    fun requestFramebufferUpdate(incremental: Boolean) {
+        val msg = FramebufferUpdateRequest(incremental, 0, 0, framebufferWidth, framebufferHeight)
+        sendMessage(msg)
+    }
+
+    fun sendPointerEvent(x: Int, y: Int) {
+        mouseX = x
+        mouseY = y
+        sendMouseStatus()
+    }
+
+    fun updateMouseButton(button: Int, pressed: Boolean) {
+        buttons[button - 1] = pressed
+        sendMouseStatus()
+    }
+
+    private fun sendMouseStatus() {
+        var mask = 0
+        for (i in buttons.indices) {
+            if (buttons[i]) mask = mask or (1 shl i)
+        }
+        sendMessage(PointerEvent(mouseX, mouseY, mask))
+    }
+
+    fun sendKeyEvent(keySym: Int, pressed: Boolean) {
+        sendMessage(KeyEvent(keySym, pressed))
+    }
+
+    fun sendClientCutText(text: String) {
+        sendMessage(ClientCutText(text))
+    }
+
+    fun sendMessage(msg: Encodable) {
+        outputLock.lock()
+        try {
+            msg.encode(outputStream)
+            outputStream.flush()
+        } catch (_: java.io.IOException) {
+            // Connection lost — will be picked up by the event loops
+        } finally {
+            outputLock.unlock()
+        }
+    }
+
+    fun kill() {
+        try { inputStream.close() } catch (_: Exception) {}
+        try { outputStream.close() } catch (_: Exception) {}
+    }
+}

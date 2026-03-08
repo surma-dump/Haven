@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.WindowCompat
@@ -71,6 +73,7 @@ fun TerminalScreen(
     fontSize: Int = UserPreferencesRepository.DEFAULT_FONT_SIZE,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     onNavigateToConnections: () -> Unit = {},
+    onNavigateToVnc: (host: String, port: Int, password: String?, sshForward: Boolean, sshSessionId: String?) -> Unit = { _, _, _, _, _ -> },
     onSelectionActiveChanged: (Boolean) -> Unit = {},
     viewModel: TerminalViewModel = hiltViewModel(),
 ) {
@@ -82,6 +85,9 @@ fun TerminalScreen(
     val navigateToConnections by viewModel.navigateToConnections.collectAsState()
     val newTabSessionPicker by viewModel.newTabSessionPicker.collectAsState()
     val newTabLoading by viewModel.newTabLoading.collectAsState()
+    var vncDialogInfo by remember { mutableStateOf<VncInfo?>(null) }
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+
     val context = LocalContext.current
     val hackTypeface = remember {
         ResourcesCompat.getFont(context, sh.haven.core.ui.R.font.hack_regular)
@@ -112,6 +118,24 @@ fun TerminalScreen(
         if (navigateToProfileId != null) {
             viewModel.selectTabByProfileId(navigateToProfileId)
         }
+    }
+
+    // VNC settings dialog
+    vncDialogInfo?.let { info ->
+        VncSettingsDialog(
+            host = info.host,
+            initialPort = info.port,
+            initialPassword = info.password,
+            initialSshForward = info.sshForward,
+            onConnect = { port, password, sshForward, save ->
+                if (save) {
+                    viewModel.saveVncSettings(info.profileId, port, password, sshForward)
+                }
+                vncDialogInfo = null
+                onNavigateToVnc(info.host, port, password, sshForward, info.sessionId)
+            },
+            onDismiss = { vncDialogInfo = null },
+        )
     }
 
     // Session picker dialog for new tab
@@ -289,6 +313,16 @@ fun TerminalScreen(
                             layout = toolbarLayout,
                             onToggleCtrl = viewModel::toggleCtrl,
                             onToggleAlt = viewModel::toggleAlt,
+                            onVncTap = if (activeTab.transportType == "SSH") {{
+                                coroutineScope.launch {
+                                    val info = viewModel.getActiveVncInfo() ?: return@launch
+                                    if (info.stored) {
+                                        onNavigateToVnc(info.host, info.port, info.password, info.sshForward, info.sessionId)
+                                    } else {
+                                        vncDialogInfo = info
+                                    }
+                                }
+                            }} else null,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -589,6 +623,77 @@ private suspend fun PointerInputScope.terminalGestureInterceptor(
             }
         }
     }
+}
+
+@Composable
+private fun VncSettingsDialog(
+    host: String,
+    initialPort: Int,
+    initialPassword: String?,
+    initialSshForward: Boolean,
+    onConnect: (port: Int, password: String?, sshForward: Boolean, save: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var port by remember { mutableStateOf(initialPort.toString()) }
+    var password by remember { mutableStateOf(initialPassword ?: "") }
+    var sshForward by remember { mutableStateOf(initialSshForward) }
+    var save by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("VNC Desktop") },
+        text = {
+            Column {
+                Text("Connect to $host", style = MaterialTheme.typography.bodyMedium)
+                androidx.compose.foundation.layout.Spacer(Modifier.size(12.dp))
+                OutlinedTextField(
+                    value = port,
+                    onValueChange = { port = it },
+                    label = { Text("Port") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(
+                        checked = sshForward,
+                        onCheckedChange = { sshForward = it },
+                    )
+                    Text("Tunnel through SSH")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(
+                        checked = save,
+                        onCheckedChange = { save = it },
+                    )
+                    Text("Save for this connection")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val p = port.toIntOrNull() ?: 5900
+                    onConnect(p, password.ifEmpty { null }, sshForward, save)
+                },
+            ) {
+                Text("Connect")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable

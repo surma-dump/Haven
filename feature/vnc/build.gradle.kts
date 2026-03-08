@@ -1,20 +1,17 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
 
 android {
-    namespace = "sh.haven.core.data"
+    namespace = "sh.haven.feature.vnc"
     compileSdk = 36
 
     defaultConfig {
         minSdk = 26
-
-        ksp {
-            arg("room.schemaLocation", "$projectDir/schemas")
-        }
     }
 
     compileOptions {
@@ -22,23 +19,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {
-    implementation(project(":core:security"))
+    implementation(project(":core:ui"))
+    implementation(project(":core:vnc"))
+    implementation(project(":core:ssh"))
+    implementation(project(":core:data"))
 
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
-    implementation(libs.datastore.preferences)
-    implementation(libs.coroutines.core)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-
-    testImplementation(libs.junit)
-    testImplementation(libs.mockk)
-    testImplementation(libs.robolectric)
-    testImplementation(libs.coroutines.test)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.lifecycle.viewmodel)
 }
 
 kotlin {

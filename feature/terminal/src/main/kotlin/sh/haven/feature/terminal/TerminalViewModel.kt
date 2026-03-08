@@ -148,12 +148,24 @@ data class TerminalTab(
     val close: () -> Unit,
 )
 
+/** VNC connection info for the active terminal's host. */
+data class VncInfo(
+    val host: String,
+    val port: Int,
+    val password: String?,
+    val sshForward: Boolean,
+    val profileId: String,
+    val sessionId: String,
+    val stored: Boolean,
+)
+
 @HiltViewModel
 class TerminalViewModel @Inject constructor(
     private val sessionManager: SshSessionManager,
     private val reticulumSessionManager: ReticulumSessionManager,
     private val hostKeyVerifier: HostKeyVerifier,
     private val preferencesRepository: UserPreferencesRepository,
+    private val connectionDao: sh.haven.core.data.db.ConnectionDao,
 ) : ViewModel() {
 
     override fun onCleared() {
@@ -201,6 +213,29 @@ class TerminalViewModel @Inject constructor(
 
     fun toggleCtrl() { _ctrlActive.value = !_ctrlActive.value }
     fun toggleAlt() { _altActive.value = !_altActive.value }
+
+    /** Get VNC connection info for the active terminal tab's SSH host. */
+    suspend fun getActiveVncInfo(): VncInfo? {
+        val tab = _tabs.value.getOrNull(_activeTabIndex.value) ?: return null
+        val config = sessionManager.getConnectionConfigForProfile(tab.profileId)?.first ?: return null
+        val profile = connectionDao.getById(tab.profileId)
+        return VncInfo(
+            host = config.host,
+            port = profile?.vncPort ?: 5900,
+            password = profile?.vncPassword,
+            sshForward = profile?.vncSshForward ?: true,
+            profileId = tab.profileId,
+            sessionId = tab.sessionId,
+            stored = profile?.vncPort != null,
+        )
+    }
+
+    /** Save VNC settings for a profile. */
+    fun saveVncSettings(profileId: String, port: Int, password: String?, sshForward: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            connectionDao.updateVncSettings(profileId, port, password, sshForward)
+        }
+    }
 
     /**
      * Apply Ctrl/Alt modifiers to keyboard input, then reset them (one-shot).

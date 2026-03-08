@@ -38,6 +38,7 @@ import sh.haven.feature.keys.KeysScreen
 import sh.haven.feature.settings.SettingsScreen
 import sh.haven.feature.sftp.SftpScreen
 import sh.haven.feature.terminal.TerminalScreen
+import sh.haven.feature.vnc.VncScreen
 import kotlin.math.abs
 
 @Composable
@@ -54,6 +55,13 @@ fun HavenNavHost(
 
     // Profile ID to focus when navigating to terminal
     var pendingTerminalProfileId by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // VNC auto-connect params from terminal
+    var pendingVncHost by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingVncPort by rememberSaveable { mutableStateOf<Int?>(null) }
+    var pendingVncPassword by rememberSaveable { mutableStateOf<String?>(null) }
+    var pendingVncSshForward by rememberSaveable { mutableStateOf(false) }
+    var pendingVncSshSessionId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Disable pager swipe while terminal text selection is active
     var terminalSelectionActive by remember { mutableStateOf(false) }
@@ -83,6 +91,7 @@ fun HavenNavHost(
     ) { innerPadding ->
         HorizontalPager(
             state = pagerState,
+            // VNC canvas consumes touch at Initial pass; toolbar/keyboard areas pass through.
             modifier = Modifier
                 .padding(innerPadding)
                 .consumeWindowInsets(innerPadding)
@@ -108,6 +117,16 @@ fun HavenNavHost(
                                 pagerState.animateScrollToPage(Screen.Connections.ordinal)
                             }
                         },
+                        onNavigateToVnc = { host, port, password, sshForward, sshSessionId ->
+                            pendingVncHost = host
+                            pendingVncPort = port
+                            pendingVncPassword = password
+                            pendingVncSshForward = sshForward
+                            pendingVncSshSessionId = sshSessionId
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(Screen.Vnc.ordinal)
+                            }
+                        },
                         onSelectionActiveChanged = { terminalSelectionActive = it },
                         // Terminal composable consumes touch events, blocking pager swipe.
                         // Intercept horizontal drags at Initial pass and forward to pager.
@@ -121,6 +140,21 @@ fun HavenNavHost(
                         }
                     }
                 }
+                Screen.Vnc -> VncScreen(
+                    isActive = pagerState.settledPage == Screen.Vnc.ordinal,
+                    pendingHost = pendingVncHost,
+                    pendingPort = pendingVncPort,
+                    pendingPassword = pendingVncPassword,
+                    pendingSshForward = pendingVncSshForward,
+                    pendingSshSessionId = pendingVncSshSessionId,
+                    onPendingConsumed = {
+                        pendingVncHost = null
+                        pendingVncPort = null
+                        pendingVncPassword = null
+                        pendingVncSshForward = false
+                        pendingVncSshSessionId = null
+                    },
+                )
                 Screen.Sftp -> SftpScreen()
                 Screen.Keys -> KeysScreen()
                 Screen.Settings -> SettingsScreen()

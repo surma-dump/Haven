@@ -83,12 +83,14 @@ dependencies {
     implementation(project(":core:security"))
     implementation(project(":core:data"))
     implementation(project(":core:reticulum"))
+    implementation(project(":core:vnc"))
 
     implementation(project(":feature:connections"))
     implementation(project(":feature:terminal"))
     implementation(project(":feature:sftp"))
     implementation(project(":feature:keys"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:vnc"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

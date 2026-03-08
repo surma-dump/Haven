@@ -23,6 +23,9 @@ data class ConnectionProfile(
     val reticulumPort: Int = 37428,
     val jumpProfileId: String? = null,
     val sshOptions: String? = null,
+    val vncPort: Int? = null,
+    val vncPassword: String? = null,
+    val vncSshForward: Boolean = true,
 ) {
     enum class AuthType {
         PASSWORD,
