@@ -25,10 +25,8 @@ The `v*` tag triggers the **Release** workflow on GitHub Actions which:
 
 ```bash
 mkdir -p releases/v<x.y.z>
-gh run download <run-id> --repo GlassOnTin/Haven -n release-aab -D releases/v<x.y.z>/
+gh release download v<x.y.z> --repo GlassOnTin/Haven --pattern '*.aab' -D releases/v<x.y.z>/
 ```
-
-Or download from the GitHub release page.
 
 Upload the AAB to Google Play Console.
 
@@ -62,7 +60,29 @@ CurrentVersion: <x.y.z>
 CurrentVersionCode: <code>
 ```
 
-Push to the branch — the MR pipeline runs automatically.
+### Rebase before pushing
+
+The fork's branch must be on top of upstream master or GitLab won't merge it.
+Clone upstream, create the branch from its master, and force-push to the fork:
+
+```bash
+cd /tmp
+git clone --no-checkout --single-branch --branch master \
+  "https://oauth2:${GITLAB_TOKEN}@gitlab.com/fdroid/fdroiddata.git" fdroiddata-rebase
+cd fdroiddata-rebase
+git remote add fork \
+  "https://oauth2:${GITLAB_TOKEN}@gitlab.com/ianrosswilliams/fdroiddata.git"
+git checkout -b haven-ssh-client master
+# create/update metadata/sh.haven.app.yml here
+git add metadata/sh.haven.app.yml
+git commit -m "Add Haven SSH client v<x.y.z>"
+git push fork haven-ssh-client --force
+cd / && rm -rf /tmp/fdroiddata-rebase
+```
+
+### MR description template
+
+The MR description must follow the F-Droid "App inclusion" template with Required/Strongly Recommended/Suggested checkboxes. See `.gitlab/merge_request_templates/App inclusion.md` in fdroiddata.
 
 ## 5. Verify
 
