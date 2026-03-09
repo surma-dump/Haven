@@ -94,6 +94,7 @@ fun ConnectionsScreen(
     val sessionSelection by viewModel.sessionSelection.collectAsState()
     val passwordFallback by viewModel.passwordFallback.collectAsState()
     val hostKeyPrompt by viewModel.hostKeyPrompt.collectAsState()
+    val globalSessionManagerLabel by viewModel.globalSessionManagerLabel.collectAsState()
 
     LaunchedEffect(navigateToTerminal) {
         navigateToTerminal?.let { profileId ->
@@ -161,6 +162,7 @@ fun ConnectionsScreen(
             discoveredDestinations = discoveredDestinations,
             discoveredHosts = discoveredHosts,
             sshProfiles = connections,
+            globalSessionManagerLabel = globalSessionManagerLabel,
             onDismiss = { showAddDialog = false },
             onSave = { profile ->
                 viewModel.saveConnection(profile)
@@ -214,6 +216,7 @@ fun ConnectionsScreen(
             discoveredDestinations = discoveredDestinations,
             discoveredHosts = discoveredHosts,
             sshProfiles = connections,
+            globalSessionManagerLabel = globalSessionManagerLabel,
             onDismiss = { editingProfile = null },
             onSave = { updated ->
                 viewModel.saveConnection(updated)

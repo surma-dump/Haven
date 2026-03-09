@@ -61,6 +61,7 @@ class BackupService @Inject constructor(
                 put("vncPort", p.vncPort ?: JSONObject.NULL)
                 put("vncPassword", p.vncPassword ?: JSONObject.NULL)
                 put("vncSshForward", p.vncSshForward)
+                put("sessionManager", p.sessionManager ?: JSONObject.NULL)
             })
         }
         json.put("connections", connections)
@@ -192,6 +193,7 @@ class BackupService @Inject constructor(
                             vncPort = c.optIntOrNull("vncPort"),
                             vncPassword = c.optStringOrNull("vncPassword"),
                             vncSshForward = c.optBoolean("vncSshForward", true),
+                            sessionManager = c.optStringOrNull("sessionManager"),
                         ),
                     )
                     count++

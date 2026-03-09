@@ -48,6 +48,7 @@ fun ConnectionEditDialog(
     discoveredDestinations: List<ConnectionsViewModel.DiscoveredDestination> = emptyList(),
     discoveredHosts: List<DiscoveredHost> = emptyList(),
     sshProfiles: List<ConnectionProfile> = emptyList(),
+    globalSessionManagerLabel: String = "None",
     onDismiss: () -> Unit,
     onSave: (ConnectionProfile) -> Unit,
 ) {
@@ -59,6 +60,7 @@ fun ConnectionEditDialog(
     var destinationHash by remember { mutableStateOf(existing?.destinationHash ?: "") }
     var jumpProfileId by remember { mutableStateOf(existing?.jumpProfileId) }
     var sshOptions by remember { mutableStateOf(existing?.sshOptions ?: "") }
+    var selectedSessionManager by remember { mutableStateOf(existing?.sessionManager) }
     var localSideband by remember {
         mutableStateOf(
             existing == null ||
@@ -308,6 +310,47 @@ fun ConnectionEditDialog(
                         }
                     }
 
+                    // Session manager
+                    Spacer(Modifier.height(8.dp))
+                    val sessionManagerOptions = listOf(
+                        null to "Default ($globalSessionManagerLabel)",
+                        "NONE" to "None",
+                        "TMUX" to "tmux",
+                        "ZELLIJ" to "zellij",
+                        "SCREEN" to "screen",
+                        "BYOBU" to "byobu",
+                    )
+                    var smExpanded by remember { mutableStateOf(false) }
+                    ExposedDropdownMenuBox(
+                        expanded = smExpanded,
+                        onExpandedChange = { smExpanded = it },
+                    ) {
+                        OutlinedTextField(
+                            value = sessionManagerOptions.firstOrNull { it.first == selectedSessionManager }?.second ?: "Default ($globalSessionManagerLabel)",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Session Manager") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(smExpanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = smExpanded,
+                            onDismissRequest = { smExpanded = false },
+                        ) {
+                            sessionManagerOptions.forEach { (value, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        selectedSessionManager = value
+                                        smExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+
                     // SSH options
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
@@ -431,6 +474,7 @@ fun ConnectionEditDialog(
                             destinationHash = null,
                             jumpProfileId = jumpProfileId,
                             sshOptions = sshOptions.ifBlank { null },
+                            sessionManager = selectedSessionManager,
                         )
                     } else {
                         val savedHost = if (localSideband) "127.0.0.1" else rnsHost

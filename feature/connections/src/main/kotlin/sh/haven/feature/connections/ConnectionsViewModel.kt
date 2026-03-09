@@ -67,6 +67,10 @@ class ConnectionsViewModel @Inject constructor(
     val sshKeys: StateFlow<List<SshKey>> = sshKeyRepository.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val globalSessionManagerLabel: StateFlow<String> = preferencesRepository.sessionManager
+        .map { it.label }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "None")
+
     val sessions: StateFlow<Map<String, SshSessionManager.SessionState>> = sshSessionManager.sessions
 
     /** Derive profile-level statuses for the connections list UI (merges SSH + Reticulum). */
@@ -354,8 +358,7 @@ class ConnectionsViewModel @Inject constructor(
                         }
                     }
 
-                    val prefSessionMgr = preferencesRepository.sessionManager.first()
-                    val sshSessionMgr = prefSessionMgr.toSshSessionManager()
+                    val sshSessionMgr = resolveSessionManager(profile)
                     val cmdOverride = preferencesRepository.sessionCommandOverride.first()
                     sshSessionManager.storeConnectionConfig(sessionId, config, sshSessionMgr, cmdOverride)
                     sshSessionMgr
@@ -720,9 +723,9 @@ class ConnectionsViewModel @Inject constructor(
         viewModelScope.launch {
             _connectingProfileId.value = profileId
             try {
-                // Set up session manager preference
-                val prefSessionMgr = preferencesRepository.sessionManager.first()
-                val sshSessionMgr = prefSessionMgr.toSshSessionManager()
+                // Set up session manager preference (per-profile or global default)
+                val profile = repository.getById(profileId)
+                val sshSessionMgr = resolveSessionManager(profile)
                 val cmdOverride = preferencesRepository.sessionCommandOverride.first()
                 val config = session.connectionConfig
                 if (config != null) {
@@ -935,4 +938,17 @@ class ConnectionsViewModel @Inject constructor(
             UserPreferencesRepository.SessionManager.SCREEN -> SessionManager.SCREEN
             UserPreferencesRepository.SessionManager.BYOBU -> SessionManager.BYOBU
         }
+
+    private suspend fun resolveSessionManager(profile: ConnectionProfile?): SessionManager {
+        val override = profile?.sessionManager
+        return if (override != null) {
+            try {
+                SessionManager.valueOf(override)
+            } catch (_: IllegalArgumentException) {
+                preferencesRepository.sessionManager.first().toSshSessionManager()
+            }
+        } else {
+            preferencesRepository.sessionManager.first().toSshSessionManager()
+        }
+    }
 }

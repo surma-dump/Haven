@@ -26,6 +26,7 @@ data class ConnectionProfile(
     val vncPort: Int? = null,
     val vncPassword: String? = null,
     val vncSshForward: Boolean = true,
+    val sessionManager: String? = null,
 ) {
     enum class AuthType {
         PASSWORD,
