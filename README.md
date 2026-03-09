@@ -37,13 +37,15 @@
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3_connections_reticulum.png" width="140" />
   &nbsp;
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/7_settings.png" width="140" />
+  &nbsp;
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/8_toolbar_config.png" width="140" />
 </p>
 
 ---
 
 ## Features
 
-**Terminal** — VT100/xterm emulator with multi-tab sessions, tmux/zellij/screen auto-attach, mouse mode for TUI apps, keyboard toolbar (Esc, Tab, Ctrl, Alt, arrows), text selection with copy and Open URL, configurable font size, and six color schemes.
+**Terminal** — VT100/xterm emulator with multi-tab sessions, tmux/zellij/screen auto-attach, mouse mode for TUI apps, configurable keyboard toolbar (Esc, Tab, Ctrl, Alt, AltGr, arrows with key repeat), text selection with copy and Open URL, configurable font size, and six color schemes.
 
 **Desktop (VNC)** — Remote desktop viewer with RFB 3.8 protocol support. Pinch-to-zoom, two-finger pan and scroll, single-finger drag for window management, soft keyboard with X11 KeySym mapping. Fullscreen mode with NoMachine-style corner hotspot for session controls. Connect directly or tunnel through SSH. Quick-connect from the terminal toolbar with per-profile VNC settings. Supports Raw, CopyRect, RRE, Hextile, and ZLib encodings.
 
