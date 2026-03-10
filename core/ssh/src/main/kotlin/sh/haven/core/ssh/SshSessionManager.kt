@@ -488,8 +488,10 @@ class SshSessionManager @Inject constructor(
     private fun buildSessionManagerCommand(sessionId: String, manager: SessionManager): String? {
         val commandTemplate = manager.command ?: return null
         val session = _sessions.value[sessionId]
-        val sessionName = session?.chosenSessionName
-            ?: "haven-${session?.label ?: sessionId.take(8)}"
+        val rawName = session?.chosenSessionName
+            ?: session?.label ?: sessionId.take(8)
+        // Sanitize for use as tmux/screen/zellij session name (no spaces or shell metacharacters)
+        val sessionName = rawName.replace(Regex("[^A-Za-z0-9._-]"), "-")
         // User override replaces the built-in command template
         val override = session?.sessionCommandOverride
         if (!override.isNullOrBlank()) {

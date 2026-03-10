@@ -3,6 +3,7 @@ package sh.haven.app
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -21,6 +22,7 @@ import sh.haven.app.navigation.HavenNavHost
 import sh.haven.core.data.preferences.UserPreferencesRepository
 import sh.haven.core.security.BiometricAuthenticator
 import sh.haven.core.ssh.SshConnectionService
+import sh.haven.core.ui.KeyEventInterceptor
 import sh.haven.core.ui.theme.HavenTheme
 import javax.inject.Inject
 
@@ -46,6 +48,13 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         exitIfDisconnected()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        KeyEventInterceptor.handler?.let { interceptor ->
+            if (interceptor(event)) return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

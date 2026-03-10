@@ -40,17 +40,20 @@ import androidx.compose.material3.TabRowDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import sh.haven.core.ui.KeyEventInterceptor
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
@@ -289,6 +292,26 @@ fun TerminalScreen(
                     // isSelectionActive is backed by Compose MutableState, so
                     // this block recomposes when selection starts/ends.
                     val selectionActive = selectionController?.isSelectionActive == true
+
+                    // Register Activity-level key interceptor for layout-aware
+                    // character mapping. This fires in dispatchKeyEvent() BEFORE
+                    // the View hierarchy, bypassing termlib's hardcoded US QWERTY
+                    // symbol table.
+                    val currentSelectionActive by rememberUpdatedState(selectionActive)
+                    DisposableEffect(activeTab) {
+                        val interceptor = { event: android.view.KeyEvent ->
+                            handleLayoutAwareKeyEvent(
+                                event, activeTab,
+                                currentSelectionActive, viewModel,
+                            )
+                        }
+                        KeyEventInterceptor.handler = interceptor
+                        onDispose {
+                            if (KeyEventInterceptor.handler === interceptor) {
+                                KeyEventInterceptor.handler = null
+                            }
+                        }
+                    }
                     val currentHyperlinkUri by activeTab.hyperlinkUri.collectAsState()
 
                     LaunchedEffect(selectionActive) {
@@ -489,6 +512,111 @@ private fun NewTabSessionPickerDialog(
             }
         },
     )
+}
+
+/**
+ * Intercepts hardware keyboard events to fix character mapping for non-US layouts.
+ *
+ * Called from [Activity.dispatchKeyEvent] BEFORE the View hierarchy processes events,
+ * bypassing termlib's hardcoded US QWERTY symbol mappings in KeyboardHandler.
+ *
+ * Uses Android's [android.view.KeyEvent.getUnicodeChar] which respects the device's
+ * KeyCharacterMap for layout-correct characters (e.g. Shift+2 → '"' on QWERTZ
+ * instead of '@').
+ *
+ * Also fixes AltGr (right Alt) combinations — termlib treats all Alt as ESC prefix,
+ * but AltGr produces composed characters (e.g. AltGr+Q → '@' on German QWERTZ).
+ *
+ * Special keys (Enter, Tab, arrows, F-keys) and Ctrl/Alt combos pass through to
+ * termlib which handles them correctly via key codes.
+ */
+private fun handleLayoutAwareKeyEvent(
+    event: android.view.KeyEvent,
+    activeTab: TerminalTab,
+    selectionActive: Boolean,
+    viewModel: TerminalViewModel,
+): Boolean {
+    if (event.action != android.view.KeyEvent.ACTION_DOWN) return false
+
+    // Don't intercept during text selection — termlib manages selection keys
+    if (selectionActive) return false
+
+    val keyCode = event.keyCode
+
+    // Skip modifier-only key presses
+    when (keyCode) {
+        android.view.KeyEvent.KEYCODE_SHIFT_LEFT,
+        android.view.KeyEvent.KEYCODE_SHIFT_RIGHT,
+        android.view.KeyEvent.KEYCODE_CTRL_LEFT,
+        android.view.KeyEvent.KEYCODE_CTRL_RIGHT,
+        android.view.KeyEvent.KEYCODE_ALT_LEFT,
+        android.view.KeyEvent.KEYCODE_ALT_RIGHT,
+        android.view.KeyEvent.KEYCODE_META_LEFT,
+        android.view.KeyEvent.KEYCODE_META_RIGHT,
+        android.view.KeyEvent.KEYCODE_CAPS_LOCK,
+        android.view.KeyEvent.KEYCODE_NUM_LOCK,
+        android.view.KeyEvent.KEYCODE_SCROLL_LOCK,
+        android.view.KeyEvent.KEYCODE_FUNCTION,
+        -> return false
+    }
+
+    // Let termlib handle special terminal keys (navigation, function keys, numpad)
+    if (isSpecialTerminalKey(keyCode)) return false
+
+    // Let termlib handle Ctrl+key and left-Alt+key natively.
+    // Control codes (Ctrl+C) and ESC prefix (Alt+x) are key-code based,
+    // not layout-dependent. Exception: AltGr (right Alt) produces composed
+    // characters via the KeyCharacterMap.
+    val meta = event.metaState
+    val hasAltGr = (meta and android.view.KeyEvent.META_ALT_RIGHT_ON) != 0
+    if ((meta and android.view.KeyEvent.META_CTRL_ON) != 0 && !hasAltGr) return false
+    if ((meta and android.view.KeyEvent.META_ALT_ON) != 0 && !hasAltGr) return false
+
+    // Get the layout-correct character from Android's KeyCharacterMap.
+    // Returns 0 for non-character keys, negative for combining/dead keys.
+    val unicodeChar = event.getUnicodeChar(meta)
+    if (unicodeChar <= 0) return false
+
+    val char = unicodeChar.toChar()
+
+    // Build modifier mask from toolbar state (shift/AltGr already baked
+    // into the character by getUnicodeChar).
+    var modifiers = 0
+    if (viewModel.ctrlActive.value) modifiers = modifiers or 4
+    if (viewModel.altActive.value) modifiers = modifiers or 2
+
+    activeTab.emulator.dispatchCharacter(modifiers, char)
+
+    // Clear toolbar modifiers after use (one-shot toggle)
+    if (viewModel.ctrlActive.value) viewModel.toggleCtrl()
+    if (viewModel.altActive.value) viewModel.toggleAlt()
+
+    return true
+}
+
+/** Keys that termlib maps to VTermKey codes — let termlib handle these directly. */
+private fun isSpecialTerminalKey(keyCode: Int): Boolean {
+    if (keyCode in android.view.KeyEvent.KEYCODE_F1..android.view.KeyEvent.KEYCODE_F12) return true
+    if (keyCode in android.view.KeyEvent.KEYCODE_NUMPAD_0..android.view.KeyEvent.KEYCODE_NUMPAD_EQUALS) return true
+    return when (keyCode) {
+        android.view.KeyEvent.KEYCODE_ENTER,
+        android.view.KeyEvent.KEYCODE_NUMPAD_ENTER,
+        android.view.KeyEvent.KEYCODE_TAB,
+        android.view.KeyEvent.KEYCODE_ESCAPE,
+        android.view.KeyEvent.KEYCODE_DEL,         // Backspace
+        android.view.KeyEvent.KEYCODE_FORWARD_DEL, // Delete
+        android.view.KeyEvent.KEYCODE_DPAD_UP,
+        android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+        android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+        android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+        android.view.KeyEvent.KEYCODE_MOVE_HOME,
+        android.view.KeyEvent.KEYCODE_MOVE_END,
+        android.view.KeyEvent.KEYCODE_PAGE_UP,
+        android.view.KeyEvent.KEYCODE_PAGE_DOWN,
+        android.view.KeyEvent.KEYCODE_INSERT,
+        -> true
+        else -> false
+    }
 }
 
 /** Pixels of vertical drag accumulated before emitting one scroll event. */
