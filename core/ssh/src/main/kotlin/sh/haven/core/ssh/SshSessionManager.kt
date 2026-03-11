@@ -234,6 +234,16 @@ class SshSessionManager @Inject constructor(
 
         updateStatus(sessionId, SessionState.Status.RECONNECTING)
 
+        // Proactively mark dependent sessions (that use this as jump host) as RECONNECTING
+        // so the UI shows the reconnecting indicator immediately instead of waiting for keepalive timeout
+        val dependents = _sessions.value.values.filter { it.jumpSessionId == sessionId }
+        for (dep in dependents) {
+            if (dep.status == SessionState.Status.CONNECTED) {
+                Log.d(TAG, "Marking dependent session ${dep.sessionId} as RECONNECTING (jump host $sessionId dropped)")
+                updateStatus(dep.sessionId, SessionState.Status.RECONNECTING)
+            }
+        }
+
         var delayMs = RECONNECT_INITIAL_DELAY_MS
         for (attempt in 1..RECONNECT_MAX_ATTEMPTS) {
             // Check if session was removed (user manually disconnected)
