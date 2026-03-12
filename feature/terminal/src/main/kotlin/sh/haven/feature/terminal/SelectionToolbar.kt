@@ -137,17 +137,10 @@ internal fun expandSelectionToWord(
         val row = range.javaClass.getMethod("getStartRow").invoke(range) as Int
         val col = range.javaClass.getMethod("getStartCol").invoke(range) as Int
 
-        // Get snapshot from emulator via reflection (getSnapshot$lib is library-internal)
-        val snapshotFlow = emulator.javaClass.getMethod("getSnapshot\$lib").invoke(emulator)
-        val snapshot = snapshotFlow.javaClass.getMethod("getValue").invoke(snapshotFlow)
-            ?: return
-
         // Get line text at selection row
-        @Suppress("UNCHECKED_CAST")
-        val lines = snapshot.javaClass.getMethod("getLines").invoke(snapshot) as List<Any>
+        val lines = getSnapshotLines(emulator) ?: return
         if (row < 0 || row >= lines.size) return
-        val line = lines[row]
-        val text = line.javaClass.getMethod("getText").invoke(line) as String
+        val text = getLineText(lines[row])
         if (col < 0 || col >= text.length) return
 
         // Don't expand if long-pressed on whitespace
@@ -197,6 +190,188 @@ internal fun updateSelectionEndAbsolute(
     }
 }
 
+/**
+ * Extract snapshot lines from the terminal emulator via reflection.
+ * Returns null if reflection fails.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun getSnapshotLines(
+    emulator: org.connectbot.terminal.TerminalEmulator,
+): List<Any>? {
+    return try {
+        val snapshotFlow = emulator.javaClass.getMethod("getSnapshot\$lib").invoke(emulator)
+        val snapshot = snapshotFlow.javaClass.getMethod("getValue").invoke(snapshotFlow)
+            ?: return null
+        snapshot.javaClass.getMethod("getLines").invoke(snapshot) as List<Any>
+    } catch (e: Exception) {
+        Log.d(TAG, "getSnapshotLines: ${e.message}")
+        null
+    }
+}
+
+/** Get text content of a snapshot line via reflection. */
+private fun getLineText(line: Any): String {
+    return try {
+        line.javaClass.getMethod("getText").invoke(line) as String
+    } catch (e: Exception) { "" }
+}
+
+/** Get terminal column count via reflection on emulator.dimensions. */
+private fun getTerminalColumns(
+    emulator: org.connectbot.terminal.TerminalEmulator,
+): Int? {
+    return try {
+        val dims = emulator.javaClass.getMethod("getDimensions").invoke(emulator)
+        dims.javaClass.getMethod("getColumns").invoke(dims) as Int
+    } catch (e: Exception) {
+        Log.d(TAG, "getTerminalColumns: ${e.message}")
+        null
+    }
+}
+
+/** True if the character is a vertical box-drawing border. */
+private fun isVerticalBorder(ch: Char): Boolean {
+    return ch == '│' || ch == '┃' || ch == '║' || ch == '|' ||
+        ch == '┆' || ch == '┇' || ch == '┊' || ch == '┋'
+}
+
+/**
+ * Find column positions where vertical border characters appear consistently
+ * across selected lines, indicating TUI panel boundaries.
+ */
+private fun findConsistentBorderColumns(lines: List<String>): Set<Int> {
+    if (lines.size < 2) return emptySet()
+
+    val nonEmptyLines = lines.count { it.isNotBlank() }
+    if (nonEmptyLines < 2) return emptySet()
+
+    val maxLen = lines.maxOf { it.length }
+    val borderCounts = IntArray(maxLen)
+
+    for (line in lines) {
+        for ((col, ch) in line.withIndex()) {
+            if (isVerticalBorder(ch)) {
+                borderCounts[col]++
+            }
+        }
+    }
+
+    // A column is a consistent border if it has a vertical border in >=60% of non-empty lines
+    val threshold = (nonEmptyLines * 0.6).toInt().coerceAtLeast(2)
+    return borderCounts.indices.filter { borderCounts[it] >= threshold }.toSet()
+}
+
+/**
+ * Extract text from the panel that contains [startCol], bounded by
+ * consistent vertical border columns.
+ */
+private fun extractPanelContent(
+    lines: List<String>,
+    borderCols: Set<Int>,
+    startCol: Int,
+): String {
+    val sortedBorders = borderCols.sorted()
+    val leftBorder = sortedBorders.lastOrNull { it < startCol } ?: -1
+    val rightBorder = sortedBorders.firstOrNull { it > startCol }
+        ?: (lines.maxOfOrNull { it.length } ?: 0)
+
+    return lines.map { line ->
+        val start = (leftBorder + 1).coerceAtLeast(0)
+        val end = rightBorder.coerceAtMost(line.length)
+        if (start < end) line.substring(start, end).trim() else ""
+    }.joinToString("\n").trimEnd()
+}
+
+/**
+ * Extract the selected portion of each line and unwrap soft-wrapped lines.
+ * A line that fills the full terminal width is assumed to be soft-wrapped.
+ */
+private fun extractWithSoftWrapUnwrap(
+    fullTexts: List<String>,
+    sel: SelectionPosition,
+    columns: Int,
+): String {
+    // Extract selected portion of each line
+    val selectedTexts = fullTexts.mapIndexed { i, text ->
+        val row = sel.startRow + i
+        val start = if (row == sel.startRow) sel.startCol else 0
+        val end = if (row == sel.endRow) (sel.endCol + 1).coerceAtMost(text.length) else text.length
+        if (start < end && start < text.length) {
+            text.substring(start, end.coerceAtMost(text.length))
+        } else ""
+    }
+
+    val result = StringBuilder()
+    for (i in selectedTexts.indices) {
+        result.append(selectedTexts[i])
+        if (i < selectedTexts.size - 1) {
+            // If the full line fills the terminal width, it was likely soft-wrapped
+            if (fullTexts[i].trimEnd().length >= columns) {
+                // Soft-wrapped: join without newline
+            } else {
+                result.append('\n')
+            }
+        }
+    }
+    return result.toString()
+}
+
+/**
+ * Smart copy: extracts text from the terminal selection with two enhancements:
+ * 1. TUI border stripping — detects vertical box-drawing borders and extracts
+ *    only the panel content where the selection started.
+ * 2. Soft-wrap unwrapping — joins lines that were soft-wrapped at the terminal
+ *    width boundary, so copied text reads as it would in a wider terminal.
+ *
+ * Falls back to [SelectionController.copySelection] if reflection fails.
+ */
+internal fun smartCopy(
+    controller: SelectionController,
+    emulator: org.connectbot.terminal.TerminalEmulator,
+): String? {
+    val sel = getSelectionRange(controller) ?: return null
+    val columns = getTerminalColumns(emulator) ?: return null
+    val snapshotLines = getSnapshotLines(emulator) ?: return null
+
+    val fullTexts = (sel.startRow..sel.endRow).map { row ->
+        if (row in snapshotLines.indices) getLineText(snapshotLines[row]) else ""
+    }
+
+    val borderCols = findConsistentBorderColumns(fullTexts)
+
+    return if (borderCols.isNotEmpty()) {
+        extractPanelContent(fullTexts, borderCols, sel.startCol)
+    } else {
+        extractWithSoftWrapUnwrap(fullTexts, sel, columns)
+    }
+}
+
+/**
+ * ClipboardManager wrapper that applies smart copy processing (border stripping,
+ * soft-wrap unwrapping) to all text written from the terminal. Used via
+ * CompositionLocalProvider to intercept both the toolbar copy button and the
+ * library's own popup copy action.
+ */
+class SmartTerminalClipboard(
+    private val delegate: androidx.compose.ui.platform.ClipboardManager,
+    private val getEmulator: () -> org.connectbot.terminal.TerminalEmulator,
+    private val getController: () -> SelectionController?,
+) : androidx.compose.ui.platform.ClipboardManager by delegate {
+
+    override fun setText(annotatedString: AnnotatedString) {
+        val controller = getController()
+        val emulator = getEmulator()
+        if (controller != null) {
+            val processed = smartCopy(controller, emulator)
+            if (processed != null) {
+                delegate.setText(AnnotatedString(processed))
+                return
+            }
+        }
+        delegate.setText(annotatedString)
+    }
+}
+
 /** Which selection anchor the d-pad arrows control. */
 private enum class AnchorTarget { START, END }
 
@@ -243,14 +418,12 @@ fun SelectionToolbarContent(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        // Copy
+        // Copy — smart processing happens in SmartTerminalClipboard interceptor
         SelectionIconButton(Icons.Filled.ContentCopy, "Copy") {
             val text = controller.copySelection()
             if (!text.isNullOrEmpty()) {
-                clipboardManager.setText(AnnotatedString(text))
                 Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
             }
-            controller.clearSelection()
         }
 
         // Paste (wrapped in bracket paste sequences when mode 2004 is active)

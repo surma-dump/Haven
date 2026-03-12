@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -58,6 +59,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
@@ -325,6 +327,18 @@ fun TerminalScreen(
                     val isBracketPaste by activeTab.bracketPasteMode.collectAsState()
                     var surfaceSize by remember { mutableStateOf(IntSize.Zero) }
 
+                    // Smart clipboard intercepts all terminal copy operations
+                    // (toolbar button + library popup) to strip TUI borders and
+                    // unwrap soft-wrapped lines.
+                    val realClipboard = LocalClipboardManager.current
+                    val smartClipboard = remember(activeTab, realClipboard) {
+                        SmartTerminalClipboard(
+                            delegate = realClipboard,
+                            getEmulator = { activeTab.emulator },
+                            getController = { selectionController },
+                        )
+                    }
+
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -354,18 +368,20 @@ fun TerminalScreen(
                             }
                         }
 
-                        Terminal(
-                            terminalEmulator = activeTab.emulator,
-                            modifier = Modifier.fillMaxSize(),
-                            initialFontSize = fontSize.sp,
-                            typeface = hackTypeface,
-                            keyboardEnabled = true,
-                            backgroundColor = Color(colorScheme.background),
-                            foregroundColor = Color(colorScheme.foreground),
-                            focusRequester = focusRequester,
-                            modifierManager = modifierManager,
-                            onSelectionControllerAvailable = { selectionController = it },
-                        )
+                        CompositionLocalProvider(LocalClipboardManager provides smartClipboard) {
+                            Terminal(
+                                terminalEmulator = activeTab.emulator,
+                                modifier = Modifier.fillMaxSize(),
+                                initialFontSize = fontSize.sp,
+                                typeface = hackTypeface,
+                                keyboardEnabled = true,
+                                backgroundColor = Color(colorScheme.background),
+                                foregroundColor = Color(colorScheme.foreground),
+                                focusRequester = focusRequester,
+                                modifierManager = modifierManager,
+                                onSelectionControllerAvailable = { selectionController = it },
+                            )
+                        }
 
                     }
 
