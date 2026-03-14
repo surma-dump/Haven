@@ -45,7 +45,7 @@
 
 ## Features
 
-**Terminal** — VT100/xterm emulator with multi-tab sessions, tmux/zellij/screen auto-attach, mouse mode for TUI apps, configurable keyboard toolbar (Esc, Tab, Ctrl, Alt, AltGr, arrows with key repeat), text selection with copy and Open URL, configurable font size, and six color schemes.
+**Terminal** — VT100/xterm emulator with multi-tab sessions, [Mosh](https://mosh.org) (Mobile Shell) for roaming connections, tmux/zellij/screen auto-attach, mouse mode for TUI apps, configurable keyboard toolbar (Esc, Tab, Ctrl, Alt, AltGr, arrows with key repeat), text selection with copy and Open URL, configurable font size, and six color schemes.
 
 **Desktop (VNC)** — Remote desktop viewer with RFB 3.8 protocol support. Pinch-to-zoom, two-finger pan and scroll, single-finger drag for window management, soft keyboard with X11 KeySym mapping. Fullscreen mode with NoMachine-style corner hotspot for session controls. Connect directly or tunnel through SSH. Quick-connect from the terminal toolbar with per-profile VNC settings. Supports Raw, CopyRect, RRE, Hextile, and ZLib encodings.
 
