@@ -1,12 +1,13 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
 
 android {
-    namespace = "sh.haven.core.ssh"
+    namespace = "sh.haven.feature.rdp"
     compileSdk = 36
 
     defaultConfig {
@@ -18,28 +19,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    testOptions {
-        unitTests.isReturnDefaultValues = true
+    buildFeatures {
+        compose = true
     }
-
 }
 
 dependencies {
-    api(libs.jsch)
-    implementation(project(":core:data"))
-    implementation(project(":core:reticulum"))
+    implementation(project(":core:ui"))
+    implementation(project(":core:rdp"))
+    implementation(project(":core:ssh"))
     implementation(project(":core:mosh"))
     implementation(project(":core:et"))
-    implementation(project(":core:rdp"))
-    implementation(libs.bouncycastle)
-    implementation(libs.coroutines.core)
-    implementation(libs.coroutines.android)
+    implementation(project(":core:data"))
+
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-
-    testImplementation(libs.junit)
-    testImplementation(libs.mockk)
-    testImplementation(libs.coroutines.test)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.lifecycle.viewmodel)
 }
 
 kotlin {

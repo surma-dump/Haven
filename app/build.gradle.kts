@@ -15,8 +15,8 @@ android {
         applicationId = "sh.haven.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 68
-        versionName = "2.3.1-rc1"
+        versionCode = 69
+        versionName = "2.4.0-rc1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -109,6 +109,7 @@ dependencies {
     implementation(project(":core:mosh"))
     implementation(project(":core:et"))
     implementation(project(":core:vnc"))
+    implementation(project(":core:rdp"))
 
     implementation(project(":feature:connections"))
     implementation(project(":feature:terminal"))
@@ -116,6 +117,7 @@ dependencies {
     implementation(project(":feature:keys"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:vnc"))
+    implementation(project(":feature:rdp"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

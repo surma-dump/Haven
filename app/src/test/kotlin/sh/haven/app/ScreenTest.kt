@@ -25,10 +25,10 @@ class ScreenTest {
     }
 
     @Test
-    fun `there are exactly 6 screens`() {
+    fun `there are exactly 7 screens`() {
         assertEquals(
-            "Navigation should have 6 tabs",
-            6, Screen.entries.size
+            "Navigation should have 7 tabs",
+            7, Screen.entries.size
         )
     }
 

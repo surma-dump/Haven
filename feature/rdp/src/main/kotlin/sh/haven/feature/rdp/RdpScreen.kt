@@ -1,0 +1,1077 @@
+package sh.haven.feature.rdp
+
+import android.graphics.Bitmap
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.KeyboardHide
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.text.font.FontWeight
+import androidx.hilt.navigation.compose.hiltViewModel
+import kotlinx.coroutines.delay
+import sh.haven.core.data.preferences.ToolbarKey
+import sh.haven.core.data.preferences.ToolbarLayout
+import kotlin.math.abs
+
+@Composable
+fun RdpScreen(
+    isActive: Boolean = true,
+    pendingHost: String? = null,
+    pendingPort: Int? = null,
+    pendingUsername: String? = null,
+    pendingPassword: String? = null,
+    pendingDomain: String? = null,
+    pendingSshForward: Boolean = false,
+    pendingSshSessionId: String? = null,
+    toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
+    onPendingConsumed: () -> Unit = {},
+    onFullscreenChanged: (Boolean) -> Unit = {},
+    viewModel: RdpViewModel = hiltViewModel(),
+) {
+    val connected by viewModel.connected.collectAsState()
+
+    // Auto-connect when navigated from terminal
+    LaunchedEffect(pendingHost) {
+        if (pendingHost != null) {
+            if (pendingSshForward && pendingSshSessionId != null) {
+                viewModel.connectViaSsh(
+                    pendingSshSessionId,
+                    "localhost",
+                    pendingPort ?: 3389,
+                    pendingUsername ?: "",
+                    pendingPassword ?: "",
+                    pendingDomain ?: "",
+                )
+            } else {
+                viewModel.connect(
+                    pendingHost,
+                    pendingPort ?: 3389,
+                    pendingUsername ?: "",
+                    pendingPassword ?: "",
+                    pendingDomain ?: "",
+                )
+            }
+            onPendingConsumed()
+        }
+    }
+
+    val frame by viewModel.frame.collectAsState()
+    val error by viewModel.error.collectAsState()
+
+    // Manage system bars for fullscreen
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+    val view = LocalView.current
+    val window = (view.context as? android.app.Activity)?.window
+
+    LaunchedEffect(fullscreen) {
+        onFullscreenChanged(fullscreen)
+        if (window != null) {
+            val controller = WindowCompat.getInsetsController(window, view)
+            if (fullscreen) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    LaunchedEffect(connected) {
+        if (!connected && fullscreen) fullscreen = false
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            if (fullscreen && window != null) {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                onFullscreenChanged(false)
+            }
+        }
+    }
+
+    if (connected && frame != null) {
+        RdpViewer(
+            frame = frame!!,
+            fullscreen = fullscreen,
+            toolbarLayout = toolbarLayout,
+            onTap = { x, y -> viewModel.sendClick(x, y) },
+            onDragStart = { x, y ->
+                viewModel.sendPointer(x, y)
+                viewModel.pressButton()
+            },
+            onDrag = { x, y -> viewModel.sendPointer(x, y) },
+            onDragEnd = { viewModel.releaseButton() },
+            onScrollUp = { viewModel.scrollUp() },
+            onScrollDown = { viewModel.scrollDown() },
+            onTypeChar = { ch -> viewModel.typeUnicode(ch.code) },
+            onKeyDown = { scancode -> viewModel.sendKey(scancode, true) },
+            onKeyUp = { scancode -> viewModel.sendKey(scancode, false) },
+            onToggleFullscreen = { fullscreen = !fullscreen },
+            onDisconnect = { viewModel.disconnect() },
+        )
+    } else {
+        val sshSessions = remember { viewModel.getActiveSshSessions() }
+        RdpConnectForm(
+            error = error,
+            sshSessions = sshSessions,
+            onConnect = { host, port, username, password, domain ->
+                viewModel.connect(host, port, username, password, domain)
+            },
+            onConnectViaSsh = { sessionId, host, port, username, password, domain ->
+                viewModel.connectViaSsh(sessionId, host, port, username, password, domain)
+            },
+        )
+    }
+}
+
+@Composable
+private fun RdpConnectForm(
+    error: String?,
+    sshSessions: List<SshTunnelOption> = emptyList(),
+    onConnect: (String, Int, String, String, String) -> Unit,
+    onConnectViaSsh: (sessionId: String, host: String, port: Int, username: String, password: String, domain: String) -> Unit = { _, _, _, _, _, _ -> },
+) {
+    var host by rememberSaveable { mutableStateOf("") }
+    var port by rememberSaveable { mutableStateOf("3389") }
+    var username by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var domain by rememberSaveable { mutableStateOf("") }
+    var sshForward by rememberSaveable { mutableStateOf(false) }
+    var selectedSshIndex by rememberSaveable { mutableStateOf(0) }
+    var showSetupHints by rememberSaveable { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(32.dp))
+        Text("RDP Connection", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = host,
+            onValueChange = { host = it },
+            label = { Text(if (sshForward) "Remote host" else "Host") },
+            placeholder = { Text(if (sshForward) "localhost" else "192.168.1.100") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = port,
+            onValueChange = { port = it },
+            label = { Text("Port") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = username,
+            onValueChange = { username = it },
+            label = { Text("Username") },
+            placeholder = { Text("user") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = domain,
+            onValueChange = { domain = it },
+            label = { Text("Domain (optional)") },
+            placeholder = { Text("WORKGROUP") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+
+        if (sshSessions.isNotEmpty()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                androidx.compose.material3.Checkbox(
+                    checked = sshForward,
+                    onCheckedChange = {
+                        sshForward = it
+                        if (it && host.isBlank()) host = "localhost"
+                    },
+                )
+                Text("Tunnel through SSH")
+            }
+            if (sshForward && sshSessions.size > 1) {
+                Spacer(Modifier.height(4.dp))
+                sshSessions.forEachIndexed { index, session ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp),
+                    ) {
+                        androidx.compose.material3.RadioButton(
+                            selected = selectedSshIndex == index,
+                            onClick = { selectedSshIndex = index },
+                        )
+                        Text(session.label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        Button(
+            onClick = {
+                val p = port.toIntOrNull() ?: 3389
+                if (sshForward && sshSessions.isNotEmpty()) {
+                    val session = sshSessions[selectedSshIndex.coerceIn(sshSessions.indices)]
+                    onConnectViaSsh(session.sessionId, host.ifBlank { "localhost" }, p, username, password, domain)
+                } else {
+                    onConnect(host, p, username, password, domain)
+                }
+            },
+            enabled = if (sshForward) sshSessions.isNotEmpty() else host.isNotBlank(),
+        ) {
+            Text("Connect")
+        }
+
+        // Error display
+        if (error != null) {
+            Spacer(Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = error,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
+        }
+
+        // Setup hints
+        Spacer(Modifier.height(16.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .animateContentSize(),
+        ) {
+            TextButton(
+                onClick = { showSetupHints = !showSetupHints },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Server setup help")
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    if (showSetupHints) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            if (showSetupHints) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text = RDP_SETUP_HINTS,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private const val RDP_SETUP_HINTS = """Quick start:
+
+Windows:
+  Settings > System > Remote Desktop > Enable
+
+Linux (xrdp):
+  sudo apt install xrdp
+  sudo systemctl enable --now xrdp
+  # Port: 3389 (default)
+  # Username/password = your Linux account
+
+Linux (GNOME Remote Desktop):
+  Settings > Sharing > Remote Desktop > Enable
+  # Uses port 3389 by default
+
+Verify the server is running:
+  ss -tlnp | grep 3389
+
+Firewall:
+  sudo ufw allow 3389/tcp
+
+Tip: Use "Tunnel through SSH" to avoid firewall
+issues and encrypt the connection. The RDP server
+only needs to listen on localhost in that case."""
+
+// --- RDP Desktop Viewer ---
+
+@Composable
+private fun RdpViewer(
+    frame: Bitmap,
+    fullscreen: Boolean,
+    toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
+    onTap: (Int, Int) -> Unit,
+    onDragStart: (Int, Int) -> Unit,
+    onDrag: (Int, Int) -> Unit,
+    onDragEnd: () -> Unit,
+    onScrollUp: () -> Unit,
+    onScrollDown: () -> Unit,
+    onTypeChar: (Char) -> Unit,
+    onKeyDown: (Int) -> Unit,
+    onKeyUp: (Int) -> Unit,
+    onToggleFullscreen: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    var viewSize by remember { mutableStateOf(IntSize.Zero) }
+    val imageBitmap = remember(frame) { frame.asImageBitmap() }
+
+    // Zoom & pan state
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var panX by remember { mutableFloatStateOf(0f) }
+    var panY by remember { mutableFloatStateOf(0f) }
+
+    // Keyboard
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    var keyboardVisible by remember { mutableStateOf(false) }
+
+    // Modifier state for key toolbar
+    var ctrlActive by remember { mutableStateOf(false) }
+    var altActive by remember { mutableStateOf(false) }
+    var shiftActive by remember { mutableStateOf(false) }
+    var winActive by remember { mutableStateOf(false) }
+
+    // Fullscreen overlay toolbar
+    var overlayVisible by remember { mutableStateOf(false) }
+
+    // Auto-hide overlay after 4 seconds
+    LaunchedEffect(overlayVisible) {
+        if (overlayVisible) {
+            delay(4000)
+            overlayVisible = false
+        }
+    }
+
+    // Sentinel for the hidden text field
+    val sentinel = " "
+    var textFieldValue by remember {
+        mutableStateOf(TextFieldValue(sentinel, TextRange(sentinel.length)))
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // RDP canvas
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .background(Color.Black)
+                .onSizeChanged { viewSize = it }
+                .pointerInput(frame.width, frame.height, viewSize, zoom, panX, panY) {
+                    val touchSlopPx = viewConfiguration.touchSlop
+                    awaitEachGesture {
+                        val firstDown = awaitFirstDown(
+                            requireUnconsumed = false,
+                            pass = PointerEventPass.Initial,
+                        )
+                        firstDown.consume()
+                        var totalFingers = 1
+                        var prevCentroid = firstDown.position
+                        var prevSpan = 0f
+                        var gestureStarted = false
+                        var cumulativeScrollY = 0f
+                        var totalMovement = 0f
+                        var lastSinglePos = firstDown.position
+                        var dragging = false
+
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val pointers = event.changes.filter { it.pressed }
+                            val count = pointers.size
+
+                            if (count >= 2) {
+                                if (dragging) {
+                                    onDragEnd()
+                                    dragging = false
+                                }
+                                totalFingers = maxOf(totalFingers, count)
+                                val centroid = Offset(
+                                    pointers.map { it.position.x }.average().toFloat(),
+                                    pointers.map { it.position.y }.average().toFloat(),
+                                )
+                                val span = pointers.map {
+                                    (it.position - centroid).getDistance()
+                                }.average().toFloat()
+
+                                if (gestureStarted) {
+                                    if (prevSpan > 0f && span > 0f) {
+                                        val scaleFactor = span / prevSpan
+                                        val newZoom = (zoom * scaleFactor).coerceIn(0.5f, 5f)
+                                        panX += (centroid.x - panX) * (1 - scaleFactor)
+                                        panY += (centroid.y - panY) * (1 - scaleFactor)
+                                        zoom = newZoom
+                                    }
+                                    val dx = centroid.x - prevCentroid.x
+                                    val dy = centroid.y - prevCentroid.y
+                                    panX += dx
+                                    panY += dy
+
+                                    cumulativeScrollY += centroid.y - prevCentroid.y
+                                    if (abs(cumulativeScrollY) > 40f) {
+                                        if (cumulativeScrollY < 0) onScrollUp() else onScrollDown()
+                                        cumulativeScrollY = 0f
+                                    }
+                                }
+
+                                gestureStarted = true
+                                prevCentroid = centroid
+                                prevSpan = span
+
+                                pointers.forEach { it.consume() }
+                            } else if (count == 1 && totalFingers == 1) {
+                                val change = pointers.first()
+                                totalMovement += change.positionChange().getDistance()
+                                lastSinglePos = change.position
+                                val pos = screenToRemote(
+                                    change.position, viewSize,
+                                    frame.width, frame.height,
+                                    zoom, panX, panY,
+                                )
+                                if (!dragging && totalMovement >= touchSlopPx) {
+                                    onDragStart(pos.first, pos.second)
+                                    dragging = true
+                                } else if (dragging) {
+                                    onDrag(pos.first, pos.second)
+                                }
+                                change.consume()
+                            }
+                        } while (event.changes.any { it.pressed })
+
+                        if (dragging) {
+                            onDragEnd()
+                        }
+
+                        if (totalFingers == 1 && totalMovement < touchSlopPx) {
+                            val (vx, vy) = screenToRemote(
+                                lastSinglePos, viewSize,
+                                frame.width, frame.height,
+                                zoom, panX, panY,
+                            )
+                            onTap(vx, vy)
+                        }
+                    }
+                },
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = zoom
+                        scaleY = zoom
+                        translationX = panX
+                        translationY = panY
+                    },
+            ) {
+                drawRemoteFrame(imageBitmap, frame.width, frame.height)
+            }
+        }
+
+        // Hidden text field for keyboard input capture
+        BasicTextField(
+            value = textFieldValue,
+            onValueChange = { newValue ->
+                val oldText = textFieldValue.text
+                val newText = newValue.text
+
+                if (newText.length > oldText.length) {
+                    val added = newText.substring(oldText.length)
+                    for (ch in added) {
+                        onTypeChar(ch)
+                    }
+                } else if (newText.length < oldText.length) {
+                    val deleted = oldText.length - newText.length
+                    repeat(deleted) {
+                        onKeyDown(SC_BACKSPACE)
+                        onKeyUp(SC_BACKSPACE)
+                    }
+                }
+
+                textFieldValue = TextFieldValue(sentinel, TextRange(sentinel.length))
+            },
+            modifier = Modifier
+                .size(1.dp)
+                .focusRequester(focusRequester)
+                .onPreviewKeyEvent { event ->
+                    // Map Compose Key to Windows scancode for RDP
+                    val scancode = androidKeyToScancode(event.key)
+                    if (scancode != null) {
+                        when (event.type) {
+                            KeyEventType.KeyDown -> onKeyDown(scancode)
+                            KeyEventType.KeyUp -> onKeyUp(scancode)
+                        }
+                        true
+                    } else {
+                        false
+                    }
+                },
+        )
+
+        // RDP key toolbar (hidden in fullscreen)
+        if (!fullscreen) {
+            RdpKeyToolbar(
+                layout = toolbarLayout,
+                ctrlActive = ctrlActive,
+                altActive = altActive,
+                shiftActive = shiftActive,
+                winActive = winActive,
+                onToggleCtrl = {
+                    ctrlActive = !ctrlActive
+                    if (!ctrlActive) onKeyUp(SC_CTRL_L) else onKeyDown(SC_CTRL_L)
+                },
+                onToggleAlt = {
+                    altActive = !altActive
+                    if (!altActive) onKeyUp(SC_ALT_L) else onKeyDown(SC_ALT_L)
+                },
+                onToggleShift = {
+                    shiftActive = !shiftActive
+                    if (!shiftActive) onKeyUp(SC_SHIFT_L) else onKeyDown(SC_SHIFT_L)
+                },
+                onToggleWin = {
+                    winActive = !winActive
+                    if (!winActive) onKeyUp(SC_WIN_L) else onKeyDown(SC_WIN_L)
+                },
+                onRdpKey = { scancode ->
+                    onKeyDown(scancode)
+                    onKeyUp(scancode)
+                    // Auto-release modifiers
+                    if (ctrlActive) { onKeyUp(SC_CTRL_L); ctrlActive = false }
+                    if (altActive) { onKeyUp(SC_ALT_L); altActive = false }
+                    if (shiftActive) { onKeyUp(SC_SHIFT_L); shiftActive = false }
+                    if (winActive) { onKeyUp(SC_WIN_L); winActive = false }
+                },
+                onToggleKeyboard = {
+                    keyboardVisible = !keyboardVisible
+                    if (keyboardVisible) {
+                        focusRequester.requestFocus()
+                        keyboardController?.show()
+                    } else {
+                        keyboardController?.hide()
+                    }
+                },
+            )
+        }
+
+        // Bottom toolbar (hidden in fullscreen)
+        if (!fullscreen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(onClick = onDisconnect) {
+                    Text("Disconnect")
+                }
+
+                Spacer(Modifier.width(8.dp))
+
+                IconButton(onClick = {
+                    keyboardVisible = !keyboardVisible
+                    if (keyboardVisible) {
+                        focusRequester.requestFocus()
+                        keyboardController?.show()
+                    } else {
+                        keyboardController?.hide()
+                    }
+                }) {
+                    Icon(
+                        if (keyboardVisible) Icons.Default.KeyboardHide
+                        else Icons.Default.Keyboard,
+                        contentDescription = "Toggle keyboard",
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                if (zoom != 1f || panX != 0f || panY != 0f) {
+                    Button(onClick = {
+                        zoom = 1f
+                        panX = 0f
+                        panY = 0f
+                    }) {
+                        Text("Reset Zoom")
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+
+                IconButton(onClick = onToggleFullscreen) {
+                    Icon(Icons.Default.Fullscreen, contentDescription = "Fullscreen")
+                }
+            }
+        }
+    } // end Column
+
+    // Fullscreen corner hotspot and overlay toolbar
+    if (fullscreen) {
+        if (overlayVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { overlayVisible = false },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = !overlayVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopEnd),
+        ) {
+            Surface(
+                onClick = { overlayVisible = true },
+                shape = RoundedCornerShape(bottomStart = 12.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.4f),
+            ) {
+                Icon(
+                    Icons.Default.Menu,
+                    contentDescription = "Session menu",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(20.dp),
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = overlayVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopEnd),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(bottomStart = 16.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                shadowElevation = 8.dp,
+            ) {
+                Column(
+                    modifier = Modifier.padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    IconButton(onClick = {
+                        overlayVisible = false
+                        onDisconnect()
+                    }) {
+                        Icon(Icons.Default.Close, contentDescription = "Disconnect")
+                    }
+                    IconButton(onClick = {
+                        keyboardVisible = !keyboardVisible
+                        if (keyboardVisible) {
+                            focusRequester.requestFocus()
+                            keyboardController?.show()
+                        } else {
+                            keyboardController?.hide()
+                        }
+                    }) {
+                        Icon(
+                            if (keyboardVisible) Icons.Default.KeyboardHide
+                            else Icons.Default.Keyboard,
+                            contentDescription = "Toggle keyboard",
+                        )
+                    }
+                    if (zoom != 1f || panX != 0f || panY != 0f) {
+                        IconButton(onClick = {
+                            zoom = 1f
+                            panX = 0f
+                            panY = 0f
+                        }) {
+                            Icon(
+                                Icons.Default.FullscreenExit,
+                                contentDescription = "Reset zoom",
+                            )
+                        }
+                    }
+                    IconButton(onClick = {
+                        overlayVisible = false
+                        onToggleFullscreen()
+                    }) {
+                        Icon(Icons.Default.FullscreenExit, contentDescription = "Exit fullscreen")
+                    }
+                }
+            }
+        }
+    }
+    } // end Box
+}
+
+private fun DrawScope.drawRemoteFrame(
+    image: androidx.compose.ui.graphics.ImageBitmap,
+    srcWidth: Int,
+    srcHeight: Int,
+) {
+    val viewW = size.width
+    val viewH = size.height
+    val scale = minOf(viewW / srcWidth, viewH / srcHeight)
+    val dstW = srcWidth * scale
+    val dstH = srcHeight * scale
+    val offsetX = (viewW - dstW) / 2
+    val offsetY = (viewH - dstH) / 2
+
+    drawImage(
+        image = image,
+        srcOffset = androidx.compose.ui.unit.IntOffset.Zero,
+        srcSize = androidx.compose.ui.unit.IntSize(srcWidth, srcHeight),
+        dstOffset = androidx.compose.ui.unit.IntOffset(offsetX.toInt(), offsetY.toInt()),
+        dstSize = androidx.compose.ui.unit.IntSize(dstW.toInt(), dstH.toInt()),
+    )
+}
+
+/**
+ * Map a screen touch coordinate to remote desktop coordinates,
+ * accounting for zoom and pan.
+ */
+private fun screenToRemote(
+    offset: Offset,
+    viewSize: IntSize,
+    fbWidth: Int,
+    fbHeight: Int,
+    zoom: Float,
+    panX: Float,
+    panY: Float,
+): Pair<Int, Int> {
+    if (viewSize.width == 0 || viewSize.height == 0) return 0 to 0
+    val viewW = viewSize.width.toFloat()
+    val viewH = viewSize.height.toFloat()
+
+    val cx = viewW / 2f
+    val cy = viewH / 2f
+    val localX = (offset.x - cx - panX) / zoom + cx
+    val localY = (offset.y - cy - panY) / zoom + cy
+
+    val fitScale = minOf(viewW / fbWidth, viewH / fbHeight)
+    val dstW = fbWidth * fitScale
+    val dstH = fbHeight * fitScale
+    val offsetX = (viewW - dstW) / 2
+    val offsetY = (viewH - dstH) / 2
+
+    val remoteX = ((localX - offsetX) / fitScale).toInt().coerceIn(0, fbWidth - 1)
+    val remoteY = ((localY - offsetY) / fitScale).toInt().coerceIn(0, fbHeight - 1)
+    return remoteX to remoteY
+}
+
+// --- RDP Key Toolbar ---
+
+@Composable
+private fun RdpKeyToolbar(
+    layout: ToolbarLayout,
+    ctrlActive: Boolean,
+    altActive: Boolean,
+    shiftActive: Boolean,
+    winActive: Boolean,
+    onToggleCtrl: () -> Unit,
+    onToggleAlt: () -> Unit,
+    onToggleShift: () -> Unit,
+    onToggleWin: () -> Unit,
+    onRdpKey: (scancode: Int) -> Unit,
+    onToggleKeyboard: () -> Unit,
+) {
+    Surface(tonalElevation = 2.dp) {
+        Column {
+            // Modifier row
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = onToggleKeyboard,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(Icons.Default.Keyboard, contentDescription = "Toggle keyboard", modifier = Modifier.size(18.dp))
+                }
+                RdpToggleButton("Ctrl", ctrlActive, onToggleCtrl)
+                RdpToggleButton("Alt", altActive, onToggleAlt)
+                RdpToggleButton("Shift", shiftActive, onToggleShift)
+                RdpToggleButton("Win", winActive, onToggleWin)
+                RdpKeyButton("Esc") { onRdpKey(SC_ESCAPE) }
+                RdpKeyButton("Tab") { onRdpKey(SC_TAB) }
+                RdpKeyButton("Del") { onRdpKey(SC_DELETE) }
+                RdpKeyButton("Ins") { onRdpKey(SC_INSERT) }
+            }
+            // Navigation row
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RdpArrowButton("\u2190") { onRdpKey(SC_LEFT) }
+                RdpArrowButton("\u2191") { onRdpKey(SC_UP) }
+                RdpArrowButton("\u2193") { onRdpKey(SC_DOWN) }
+                RdpArrowButton("\u2192") { onRdpKey(SC_RIGHT) }
+                Spacer(Modifier.width(8.dp))
+                RdpKeyButton("Home") { onRdpKey(SC_HOME) }
+                RdpKeyButton("End") { onRdpKey(SC_END) }
+                RdpKeyButton("PgUp") { onRdpKey(SC_PGUP) }
+                RdpKeyButton("PgDn") { onRdpKey(SC_PGDN) }
+                Spacer(Modifier.width(8.dp))
+                for (i in 1..12) {
+                    RdpKeyButton("F$i") { onRdpKey(SC_F1 + i - 1) }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun RdpRepeatingButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+    content: @Composable () -> Unit,
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    var didRepeat by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isPressed) {
+        if (isPressed) {
+            didRepeat = false
+            delay(400)
+            didRepeat = true
+            while (true) {
+                onClick()
+                delay(80)
+            }
+        }
+    }
+
+    FilledTonalButton(
+        onClick = {},
+        modifier = modifier.pointerInteropFilter { motionEvent ->
+            when (motionEvent.action) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    isPressed = true
+                    true
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    if (!didRepeat) onClick()
+                    isPressed = false
+                    true
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    isPressed = false
+                    true
+                }
+                else -> false
+            }
+        },
+        contentPadding = contentPadding,
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun RdpKeyButton(label: String, onClick: () -> Unit) {
+    RdpRepeatingButton(
+        onClick = onClick,
+        modifier = Modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp),
+    ) {
+        Text(label, fontSize = 11.sp, lineHeight = 11.sp)
+    }
+}
+
+@Composable
+private fun RdpArrowButton(label: String, onClick: () -> Unit) {
+    RdpRepeatingButton(
+        onClick = onClick,
+        modifier = Modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp),
+    ) {
+        Text(label, fontSize = 16.sp, lineHeight = 16.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun RdpToggleButton(label: String, active: Boolean, onClick: () -> Unit) {
+    FilledTonalButton(
+        onClick = onClick,
+        modifier = Modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        colors = if (active) {
+            ButtonDefaults.filledTonalButtonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            ButtonDefaults.filledTonalButtonColors()
+        },
+    ) {
+        Text(label, fontSize = 11.sp, lineHeight = 11.sp)
+    }
+}
+
+/** Map Android Compose Key to Windows scancode for special (non-printable) keys. */
+private fun androidKeyToScancode(key: Key): Int? = when (key) {
+    Key.Enter -> SC_RETURN
+    Key.Tab -> SC_TAB
+    Key.Escape -> SC_ESCAPE
+    Key.Backspace -> SC_BACKSPACE
+    Key.Delete -> SC_DELETE
+    Key.Insert -> SC_INSERT
+    Key.DirectionLeft -> SC_LEFT
+    Key.DirectionRight -> SC_RIGHT
+    Key.DirectionUp -> SC_UP
+    Key.DirectionDown -> SC_DOWN
+    Key.MoveHome -> SC_HOME
+    Key.MoveEnd -> SC_END
+    Key.PageUp -> SC_PGUP
+    Key.PageDown -> SC_PGDN
+    Key.ShiftLeft, Key.ShiftRight -> SC_SHIFT_L
+    Key.CtrlLeft, Key.CtrlRight -> SC_CTRL_L
+    Key.AltLeft, Key.AltRight -> SC_ALT_L
+    else -> null
+}
+
+// Windows scancodes (Set 1 / AT keyboard)
+private const val SC_ESCAPE = 0x01
+private const val SC_BACKSPACE = 0x0E
+private const val SC_TAB = 0x0F
+private const val SC_RETURN = 0x1C
+private const val SC_CTRL_L = 0x1D
+private const val SC_SHIFT_L = 0x2A
+private const val SC_ALT_L = 0x38
+private const val SC_DELETE = 0x53
+private const val SC_INSERT = 0x52
+private const val SC_HOME = 0x47
+private const val SC_END = 0x4F
+private const val SC_PGUP = 0x49
+private const val SC_PGDN = 0x51
+private const val SC_UP = 0x48
+private const val SC_DOWN = 0x50
+private const val SC_LEFT = 0x4B
+private const val SC_RIGHT = 0x4D
+private const val SC_WIN_L = 0x5B
+private const val SC_F1 = 0x3B

@@ -28,6 +28,7 @@ class UserPreferencesRepository @Inject constructor(
     private val toolbarRow2Key = stringPreferencesKey("toolbar_row2") // legacy
     private val toolbarLayoutKey = stringPreferencesKey("toolbar_layout")
     private val sessionCommandOverrideKey = stringPreferencesKey("session_command_override")
+    private val sftpSortModeKey = stringPreferencesKey("sftp_sort_mode")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -160,6 +161,16 @@ class UserPreferencesRepository @Inject constructor(
             } else {
                 prefs[sessionCommandOverrideKey] = command
             }
+        }
+    }
+
+    val sftpSortMode: Flow<String> = dataStore.data.map { prefs ->
+        prefs[sftpSortModeKey] ?: "NAME_ASC"
+    }
+
+    suspend fun setSftpSortMode(mode: String) {
+        dataStore.edit { prefs ->
+            prefs[sftpSortModeKey] = mode
         }
     }
 

@@ -37,6 +37,13 @@ includeBuild("mosh-kotlin") {
     }
 }
 
+// IronRDP + UniFFI Kotlin bindings (submodule).
+includeBuild("rdp-kotlin") {
+    dependencySubstitution {
+        substitute(module("sh.haven:rdp-transport")).using(project(":"))
+    }
+}
+
 rootProject.name = "Haven"
 
 include(":app")
@@ -54,6 +61,8 @@ include(":core:reticulum")
 include(":core:mosh")
 include(":core:et")
 include(":core:vnc")
+include(":core:rdp")
 
 include(":feature:settings")
 include(":feature:vnc")
+include(":feature:rdp")

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "sh.haven.core.ssh"
+    namespace = "sh.haven.core.rdp"
     compileSdk = 36
 
     defaultConfig {
@@ -22,24 +22,22 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    // Include pre-built native libraries from rdp-kotlin
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("${rootProject.projectDir}/rdp-kotlin/jniLibs")
+        }
+    }
 }
 
 dependencies {
-    api(libs.jsch)
-    implementation(project(":core:data"))
-    implementation(project(":core:reticulum"))
-    implementation(project(":core:mosh"))
-    implementation(project(":core:et"))
-    implementation(project(":core:rdp"))
-    implementation(libs.bouncycastle)
+    api("sh.haven:rdp-transport:0.1.0")
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
     testImplementation(libs.junit)
-    testImplementation(libs.mockk)
-    testImplementation(libs.coroutines.test)
 }
 
 kotlin {

@@ -82,6 +82,7 @@ fun SftpScreen(
     val sortMode by viewModel.sortMode.collectAsState()
     val showHidden by viewModel.showHidden.collectAsState()
     val loading by viewModel.loading.collectAsState()
+    val transferProgress by viewModel.transferProgress.collectAsState()
     val error by viewModel.error.collectAsState()
     val message by viewModel.message.collectAsState()
 
@@ -196,7 +197,37 @@ fun SftpScreen(
                 .padding(innerPadding),
         ) {
             if (loading) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                val progress = transferProgress
+                if (progress != null && progress.totalBytes > 0) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        LinearProgressIndicator(
+                            progress = { progress.fraction },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                progress.fileName,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                "${Formatter.formatFileSize(context, progress.transferredBytes)} / ${Formatter.formatFileSize(context, progress.totalBytes)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
             }
 
             if (connectedProfiles.isEmpty()) {

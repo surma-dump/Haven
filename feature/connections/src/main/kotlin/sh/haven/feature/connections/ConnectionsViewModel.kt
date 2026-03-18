@@ -198,6 +198,16 @@ class ConnectionsViewModel @Inject constructor(
     private val _navigateToTerminal = MutableStateFlow<String?>(null)
     val navigateToTerminal: StateFlow<String?> = _navigateToTerminal.asStateFlow()
 
+    /** Emitted to navigate to VNC screen with connection params. */
+    data class VncNavigation(val host: String, val port: Int, val password: String?)
+    private val _navigateToVnc = MutableStateFlow<VncNavigation?>(null)
+    val navigateToVnc: StateFlow<VncNavigation?> = _navigateToVnc.asStateFlow()
+
+    /** Emitted to navigate to RDP screen with connection params. */
+    data class RdpNavigation(val host: String, val port: Int, val username: String, val password: String, val domain: String)
+    private val _navigateToRdp = MutableStateFlow<RdpNavigation?>(null)
+    val navigateToRdp: StateFlow<RdpNavigation?> = _navigateToRdp.asStateFlow()
+
     /** Emitted to open a new session (new tab) on an already-connected profile. */
     private val _newSessionProfileId = MutableStateFlow<String?>(null)
     val newSessionProfileId: StateFlow<String?> = _newSessionProfileId.asStateFlow()
@@ -226,6 +236,8 @@ class ConnectionsViewModel @Inject constructor(
 
     fun onNavigated() {
         _navigateToTerminal.value = null
+        _navigateToVnc.value = null
+        _navigateToRdp.value = null
         _newSessionProfileId.value = null
     }
 
@@ -366,6 +378,14 @@ class ConnectionsViewModel @Inject constructor(
     }
 
     fun connect(profile: ConnectionProfile, password: String, keyOnly: Boolean = false) {
+        if (profile.isVnc) {
+            connectVnc(profile)
+            return
+        }
+        if (profile.isRdp) {
+            connectRdp(profile, password)
+            return
+        }
         if (profile.isReticulum) {
             connectReticulum(profile)
             return
@@ -379,6 +399,27 @@ class ConnectionsViewModel @Inject constructor(
             return
         }
         connectSsh(profile, password, keyOnly)
+    }
+
+    private fun connectVnc(profile: ConnectionProfile) {
+        val host = profile.host
+        val port = profile.vncPort ?: profile.port
+        val password = profile.vncPassword
+        viewModelScope.launch {
+            repository.markConnected(profile.id)
+        }
+        _navigateToVnc.value = VncNavigation(host, port, password)
+    }
+
+    private fun connectRdp(profile: ConnectionProfile, password: String) {
+        val host = profile.host
+        val port = profile.rdpPort
+        val username = profile.rdpUsername ?: profile.username
+        val domain = profile.rdpDomain ?: ""
+        viewModelScope.launch {
+            repository.markConnected(profile.id)
+        }
+        _navigateToRdp.value = RdpNavigation(host, port, username, password, domain)
     }
 
     private fun connectSsh(profile: ConnectionProfile, password: String, keyOnly: Boolean) {

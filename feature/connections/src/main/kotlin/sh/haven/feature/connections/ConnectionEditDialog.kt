@@ -59,6 +59,8 @@ fun ConnectionEditDialog(
 ) {
     // Transport dropdown maps to: connectionType + useMosh + useEternalTerminal
     val initialTransport = when {
+        existing?.isVnc == true -> "VNC"
+        existing?.isRdp == true -> "RDP"
         existing?.isEternalTerminal == true -> "ET"
         existing?.isMosh == true -> "MOSH"
         existing?.isReticulum == true -> "RETICULUM"
@@ -66,11 +68,27 @@ fun ConnectionEditDialog(
     }
     var selectedTransport by remember { mutableStateOf(initialTransport) }
     // Derived connectionType for field visibility
-    val connectionType = if (selectedTransport == "RETICULUM") "RETICULUM" else "SSH"
+    val connectionType = when (selectedTransport) {
+        "RETICULUM" -> "RETICULUM"
+        "VNC" -> "VNC"
+        "RDP" -> "RDP"
+        else -> "SSH"
+    }
     var label by remember { mutableStateOf(existing?.label ?: "") }
     var host by remember { mutableStateOf(existing?.host ?: "") }
-    var port by remember { mutableStateOf(existing?.port?.toString() ?: "22") }
+    var port by remember {
+        mutableStateOf(
+            when {
+                existing?.isVnc == true -> (existing.vncPort ?: 5900).toString()
+                existing?.isRdp == true -> existing.rdpPort.toString()
+                else -> existing?.port?.toString() ?: "22"
+            }
+        )
+    }
     var username by remember { mutableStateOf(existing?.username ?: "") }
+    var rdpUsername by remember { mutableStateOf(existing?.rdpUsername ?: "") }
+    var rdpDomain by remember { mutableStateOf(existing?.rdpDomain ?: "") }
+    var vncPassword by remember { mutableStateOf(existing?.vncPassword ?: "") }
     var destinationHash by remember { mutableStateOf(existing?.destinationHash ?: "") }
     var jumpProfileId by remember { mutableStateOf(existing?.jumpProfileId) }
     var sshOptions by remember { mutableStateOf(existing?.sshOptions ?: "") }
@@ -99,6 +117,8 @@ fun ConnectionEditDialog(
                     "SSH" to "SSH",
                     "MOSH" to "Mosh",
                     "ET" to "Eternal Terminal",
+                    "VNC" to "VNC (Desktop)",
+                    "RDP" to "RDP (Desktop)",
                     "RETICULUM" to "Reticulum",
                 )
                 var transportExpanded by remember { mutableStateOf(false) }
@@ -138,14 +158,101 @@ fun ConnectionEditDialog(
                     onValueChange = { label = it },
                     label = { Text("Label") },
                     placeholder = {
-                        Text(if (connectionType == "SSH") "My Server" else "My Node")
+                        Text(
+                            when (connectionType) {
+                                "VNC" -> "My VNC Desktop"
+                                "RDP" -> "My RDP Desktop"
+                                "RETICULUM" -> "My Node"
+                                else -> "My Server"
+                            }
+                        )
                     },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
 
-                if (connectionType == "SSH") {
+                if (connectionType == "VNC") {
+                    // VNC: host, port, password
+                    OutlinedTextField(
+                        value = host,
+                        onValueChange = { host = it },
+                        label = { Text("Host") },
+                        placeholder = { Text("192.168.1.100") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = port,
+                        onValueChange = { port = it.filter { c -> c.isDigit() } },
+                        label = { Text("Port") },
+                        placeholder = { Text("5900") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.width(120.dp),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = vncPassword,
+                        onValueChange = { vncPassword = it },
+                        label = { Text("Password (optional)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "VNC passwords are limited to 8 characters",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (connectionType == "RDP") {
+                    // RDP: host, port, username, domain
+                    OutlinedTextField(
+                        value = host,
+                        onValueChange = { host = it },
+                        label = { Text("Host") },
+                        placeholder = { Text("192.168.1.100") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = rdpUsername,
+                            onValueChange = { rdpUsername = it },
+                            label = { Text("Username") },
+                            placeholder = { Text("user") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        OutlinedTextField(
+                            value = port,
+                            onValueChange = { port = it.filter { c -> c.isDigit() } },
+                            label = { Text("Port") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.width(80.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = rdpDomain,
+                        onValueChange = { rdpDomain = it },
+                        label = { Text("Domain (optional)") },
+                        placeholder = { Text("WORKGROUP") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Requires xrdp (Linux) or Remote Desktop (Windows)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (connectionType == "SSH") {
                     // Discovered hosts — filter by typed prefix
                     val filteredHosts = remember(discoveredHosts, host) {
                         val prefix = host.lowercase()
@@ -544,16 +651,48 @@ fun ConnectionEditDialog(
             }
         },
         confirmButton = {
-            val canSave = if (connectionType == "SSH") {
-                host.isNotBlank() && username.isNotBlank()
-            } else {
-                destinationHash.length == 32 && (localSideband || rnsHost.isNotBlank())
+            val canSave = when (connectionType) {
+                "SSH" -> host.isNotBlank() && username.isNotBlank()
+                "VNC" -> host.isNotBlank()
+                "RDP" -> host.isNotBlank() && rdpUsername.isNotBlank()
+                else -> destinationHash.length == 32 && (localSideband || rnsHost.isNotBlank())
             }
             TextButton(
                 onClick = {
-                    val portInt = port.toIntOrNull() ?: 22
                     val etPortInt = etPort.toIntOrNull() ?: 2022
-                    val profile = if (connectionType == "SSH") {
+                    val profile = if (connectionType == "VNC") {
+                        val vncPortInt = port.toIntOrNull() ?: 5900
+                        (existing ?: ConnectionProfile(
+                            label = label,
+                            host = host,
+                            username = "",
+                        )).copy(
+                            label = label.ifBlank { "VNC: $host" },
+                            host = host,
+                            port = vncPortInt,
+                            username = "",
+                            connectionType = "VNC",
+                            vncPort = vncPortInt,
+                            vncPassword = vncPassword.ifBlank { null },
+                        )
+                    } else if (connectionType == "RDP") {
+                        val rdpPortInt = port.toIntOrNull() ?: 3389
+                        (existing ?: ConnectionProfile(
+                            label = label,
+                            host = host,
+                            username = rdpUsername,
+                        )).copy(
+                            label = label.ifBlank { "RDP: $rdpUsername@$host" },
+                            host = host,
+                            port = rdpPortInt,
+                            username = rdpUsername,
+                            connectionType = "RDP",
+                            rdpPort = rdpPortInt,
+                            rdpUsername = rdpUsername.ifBlank { null },
+                            rdpDomain = rdpDomain.ifBlank { null },
+                        )
+                    } else if (connectionType == "SSH") {
+                        val portInt = port.toIntOrNull() ?: 22
                         (existing ?: ConnectionProfile(
                             label = label,
                             host = host,

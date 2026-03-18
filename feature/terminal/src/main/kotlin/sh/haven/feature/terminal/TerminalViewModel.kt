@@ -552,6 +552,12 @@ class TerminalViewModel @Inject constructor(
             moshOscHandler.onCwdChanged = { moshCwdFlow.value = it }
             moshOscHandler.onHyperlink = { uri -> moshHyperlinkFlow.value = uri }
 
+            // Defer initial command until first output arrives (shell ready)
+            val moshInitialCmd = session.initialCommand
+            val moshShellReady = java.util.concurrent.atomic.AtomicBoolean(false)
+            // Holder so lambda can reference session before it's assigned
+            val moshSessionRef = arrayOfNulls<sh.haven.core.mosh.MoshSession>(1)
+
             val moshSession = moshSessionManager.createTerminalSession(
                 sessionId = sessionId,
                 onDataReceived = { data, offset, length ->
@@ -561,8 +567,16 @@ class TerminalViewModel @Inject constructor(
                     if (len > 0) {
                         moshWriteBuffer.append(moshOscHandler.outputBuf, 0, len)
                     }
+                    // Send session manager command once shell produces first output
+                    if (moshInitialCmd != null && moshShellReady.compareAndSet(false, true)) {
+                        viewModelScope.launch {
+                            kotlinx.coroutines.delay(100) // brief settle after first prompt
+                            moshSessionRef[0]?.sendInput((moshInitialCmd + "\n").toByteArray())
+                        }
+                    }
                 },
             ) ?: continue
+            moshSessionRef[0] = moshSession
 
             val moshCoalescer = InputCoalescer { data -> moshSession.sendInput(data) }
             val moshScheme = terminalColorScheme.value
@@ -582,16 +596,6 @@ class TerminalViewModel @Inject constructor(
             )
 
             moshSession.start()
-
-            // Send session manager command (tmux/zellij/screen) if configured
-            val initialCmd = session.initialCommand
-            if (initialCmd != null) {
-                // Small delay to let mosh-client establish the connection
-                viewModelScope.launch {
-                    kotlinx.coroutines.delay(500)
-                    moshSession.sendInput((initialCmd + "\n").toByteArray())
-                }
-            }
 
             currentTabs.add(
                 TerminalTab(
@@ -631,6 +635,11 @@ class TerminalViewModel @Inject constructor(
             etOscHandler.onCwdChanged = { etCwdFlow.value = it }
             etOscHandler.onHyperlink = { uri -> etHyperlinkFlow.value = uri }
 
+            // Defer initial command until first output arrives (shell ready)
+            val etInitialCmd = session.initialCommand
+            val etShellReady = java.util.concurrent.atomic.AtomicBoolean(false)
+            val etSessionRef = arrayOfNulls<sh.haven.core.et.EtSession>(1)
+
             val etSession = etSessionManager.createTerminalSession(
                 sessionId = sessionId,
                 onDataReceived = { data, offset, length ->
@@ -640,8 +649,16 @@ class TerminalViewModel @Inject constructor(
                     if (len > 0) {
                         etWriteBuffer.append(etOscHandler.outputBuf, 0, len)
                     }
+                    // Send session manager command once shell produces first output
+                    if (etInitialCmd != null && etShellReady.compareAndSet(false, true)) {
+                        viewModelScope.launch {
+                            kotlinx.coroutines.delay(100) // brief settle after first prompt
+                            etSessionRef[0]?.sendInput((etInitialCmd + "\n").toByteArray())
+                        }
+                    }
                 },
             ) ?: continue
+            etSessionRef[0] = etSession
 
             val etCoalescer = InputCoalescer { data -> etSession.sendInput(data) }
             val etScheme = terminalColorScheme.value
@@ -661,15 +678,6 @@ class TerminalViewModel @Inject constructor(
             )
 
             etSession.start()
-
-            // Send session manager command if configured
-            val initialCmd = session.initialCommand
-            if (initialCmd != null) {
-                viewModelScope.launch {
-                    kotlinx.coroutines.delay(500)
-                    etSession.sendInput((initialCmd + "\n").toByteArray())
-                }
-            }
 
             currentTabs.add(
                 TerminalTab(

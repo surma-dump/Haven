@@ -6,15 +6,18 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jcraft.jsch.ChannelSftp
+import com.jcraft.jsch.SftpProgressMonitor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import sh.haven.core.data.db.entities.ConnectionProfile
+import sh.haven.core.data.preferences.UserPreferencesRepository
 import sh.haven.core.data.repository.ConnectionRepository
 import sh.haven.core.et.EtSessionManager
 import sh.haven.core.mosh.MoshSessionManager
@@ -39,12 +42,23 @@ enum class SortMode {
     NAME_ASC, NAME_DESC, SIZE_ASC, SIZE_DESC, DATE_ASC, DATE_DESC
 }
 
+/** Transfer progress for download/upload operations. */
+data class TransferProgress(
+    val fileName: String,
+    val totalBytes: Long,
+    val transferredBytes: Long,
+) {
+    val fraction: Float
+        get() = if (totalBytes > 0) (transferredBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
+}
+
 @HiltViewModel
 class SftpViewModel @Inject constructor(
     private val sessionManager: SshSessionManager,
     private val moshSessionManager: MoshSessionManager,
     private val etSessionManager: EtSessionManager,
     private val repository: ConnectionRepository,
+    private val preferencesRepository: UserPreferencesRepository,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -70,6 +84,9 @@ class SftpViewModel @Inject constructor(
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
+    private val _transferProgress = MutableStateFlow<TransferProgress?>(null)
+    val transferProgress: StateFlow<TransferProgress?> = _transferProgress.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
@@ -77,6 +94,18 @@ class SftpViewModel @Inject constructor(
     val message: StateFlow<String?> = _message.asStateFlow()
 
     private var sftpChannel: ChannelSftp? = null
+
+    init {
+        // Restore persisted sort mode
+        viewModelScope.launch {
+            val saved = preferencesRepository.sftpSortMode.first()
+            _sortMode.value = try {
+                SortMode.valueOf(saved)
+            } catch (_: IllegalArgumentException) {
+                SortMode.NAME_ASC
+            }
+        }
+    }
 
     fun syncConnectedProfiles() {
         viewModelScope.launch {
@@ -150,6 +179,10 @@ class SftpViewModel @Inject constructor(
         _sortMode.value = mode
         _allEntries.value = sortEntries(_allEntries.value, mode)
         applyFilter()
+        // Persist the choice
+        viewModelScope.launch {
+            preferencesRepository.setSftpSortMode(mode.name)
+        }
     }
 
     fun toggleShowHidden() {
@@ -172,12 +205,33 @@ class SftpViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _loading.value = true
+                _transferProgress.value = TransferProgress(entry.name, entry.size, 0)
                 withContext(Dispatchers.IO) {
                     val channel = getOrOpenChannel(profileId) ?: throw IllegalStateException("Not connected")
                     val outputStream: OutputStream = appContext.contentResolver.openOutputStream(destinationUri)
                         ?: throw IllegalStateException("Cannot open output stream")
                     outputStream.use { out ->
-                        channel.get(entry.path, out)
+                        val monitor = object : SftpProgressMonitor {
+                            private var total = 0L
+                            private var transferred = 0L
+
+                            override fun init(op: Int, src: String, dest: String, max: Long) {
+                                total = if (max == SftpProgressMonitor.UNKNOWN_SIZE) entry.size else max
+                                transferred = 0
+                                _transferProgress.value = TransferProgress(entry.name, total, 0)
+                            }
+
+                            override fun count(bytes: Long): Boolean {
+                                transferred += bytes
+                                _transferProgress.value = TransferProgress(entry.name, total, transferred)
+                                return true
+                            }
+
+                            override fun end() {
+                                _transferProgress.value = TransferProgress(entry.name, total, total)
+                            }
+                        }
+                        channel.get(entry.path, out, monitor)
                     }
                 }
                 _message.value = "Downloaded ${entry.name}"
@@ -186,6 +240,7 @@ class SftpViewModel @Inject constructor(
                 _error.value = "Download failed: ${e.message}"
             } finally {
                 _loading.value = false
+                _transferProgress.value = null
             }
         }
     }
@@ -197,12 +252,38 @@ class SftpViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 _loading.value = true
+                // Get source file size for progress
+                val fileSize = appContext.contentResolver.query(sourceUri, null, null, null, null)?.use { cursor ->
+                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                    if (cursor.moveToFirst() && sizeIndex >= 0) cursor.getLong(sizeIndex) else -1L
+                } ?: -1L
+                _transferProgress.value = TransferProgress(fileName, fileSize, 0)
                 withContext(Dispatchers.IO) {
                     val channel = getOrOpenChannel(profileId) ?: throw IllegalStateException("Not connected")
                     val inputStream = appContext.contentResolver.openInputStream(sourceUri)
                         ?: throw IllegalStateException("Cannot open input stream")
                     inputStream.use { input ->
-                        channel.put(input, destPath)
+                        val monitor = object : SftpProgressMonitor {
+                            private var total = 0L
+                            private var transferred = 0L
+
+                            override fun init(op: Int, src: String, dest: String, max: Long) {
+                                total = if (max == SftpProgressMonitor.UNKNOWN_SIZE) fileSize else max
+                                transferred = 0
+                                _transferProgress.value = TransferProgress(fileName, total, 0)
+                            }
+
+                            override fun count(bytes: Long): Boolean {
+                                transferred += bytes
+                                _transferProgress.value = TransferProgress(fileName, total, transferred)
+                                return true
+                            }
+
+                            override fun end() {
+                                _transferProgress.value = TransferProgress(fileName, total, total)
+                            }
+                        }
+                        channel.put(input, destPath, monitor)
                     }
                     Log.d(TAG, "Upload complete: '$destPath'")
                 }
@@ -213,6 +294,7 @@ class SftpViewModel @Inject constructor(
                 _error.value = "Upload failed: ${e.message}"
             } finally {
                 _loading.value = false
+                _transferProgress.value = null
             }
         }
     }

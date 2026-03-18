@@ -94,6 +94,8 @@ private val PROFILE_COLORS = listOf(
 fun ConnectionsScreen(
     onNavigateToTerminal: (profileId: String) -> Unit = {},
     onNavigateToNewSession: (profileId: String) -> Unit = {},
+    onNavigateToVnc: (host: String, port: Int, password: String?) -> Unit = { _, _, _ -> },
+    onNavigateToRdp: (host: String, port: Int, username: String, password: String, domain: String) -> Unit = { _, _, _, _, _ -> },
     viewModel: ConnectionsViewModel = hiltViewModel(),
 ) {
     val connections by viewModel.connections.collectAsState()
@@ -119,6 +121,8 @@ fun ConnectionsScreen(
     val connectingProfileId by viewModel.connectingProfileId.collectAsState()
     val error by viewModel.error.collectAsState()
     val navigateToTerminal by viewModel.navigateToTerminal.collectAsState()
+    val navigateToVnc by viewModel.navigateToVnc.collectAsState()
+    val navigateToRdp by viewModel.navigateToRdp.collectAsState()
     val deploySuccess by viewModel.deploySuccess.collectAsState()
     val sessionSelection by viewModel.sessionSelection.collectAsState()
     val passwordFallback by viewModel.passwordFallback.collectAsState()
@@ -133,6 +137,20 @@ fun ConnectionsScreen(
     LaunchedEffect(navigateToTerminal) {
         navigateToTerminal?.let { profileId ->
             onNavigateToTerminal(profileId)
+            viewModel.onNavigated()
+        }
+    }
+
+    LaunchedEffect(navigateToVnc) {
+        navigateToVnc?.let { nav ->
+            onNavigateToVnc(nav.host, nav.port, nav.password)
+            viewModel.onNavigated()
+        }
+    }
+
+    LaunchedEffect(navigateToRdp) {
+        navigateToRdp?.let { nav ->
+            onNavigateToRdp(nav.host, nav.port, nav.username, nav.password, nav.domain)
             viewModel.onNavigated()
         }
     }
@@ -581,6 +599,12 @@ private fun onTapProfile(
         // ensureShellForProfile navigates via _navigateToTerminal when ready
         // (handles jump host sessions that need shell setup or session picker)
         viewModel.ensureShellForProfile(profile.id)
+    } else if (profile.isVnc) {
+        // VNC: connect directly (password stored in profile)
+        viewModel.connect(profile, "")
+    } else if (profile.isRdp) {
+        // RDP: need password from user
+        showPasswordDialog()
     } else if (profile.isReticulum) {
         viewModel.connect(profile, "")
     } else if (sshKeys.isNotEmpty()) {

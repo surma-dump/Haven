@@ -37,7 +37,19 @@ fun PasswordDialog(
         title = { Text("Connect to ${profile.label}") },
         text = {
             Column {
-                Text("${profile.username}@${profile.host}:${profile.port}")
+                when {
+                    profile.isRdp -> {
+                        Text("${profile.rdpUsername ?: profile.username}@${profile.host}:${profile.rdpPort}")
+                        if (!profile.rdpDomain.isNullOrBlank()) {
+                            Text(
+                                "Domain: ${profile.rdpDomain}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    else -> Text("${profile.username}@${profile.host}:${profile.port}")
+                }
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
@@ -53,7 +65,7 @@ fun PasswordDialog(
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                if (hasKeys) {
+                if (hasKeys && profile.isSsh) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Leave empty to connect with SSH key",
