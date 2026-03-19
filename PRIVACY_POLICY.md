@@ -1,8 +1,8 @@
 # Privacy Policy
 
-**Haven — SSH Client for Android**
+**Haven — SSH, VNC, RDP & SFTP Client for Android**
 
-Last updated: 2026-02-25
+Last updated: 2026-03-19
 
 ## Data Collection
 
@@ -10,18 +10,29 @@ Haven does not collect, transmit, or share any personal data. All data stays on 
 
 ## What Haven stores locally
 
-- **SSH connection profiles**: hostnames, ports, and usernames you configure. Stored in a local database on your device.
+- **Connection profiles**: hostnames, ports, usernames, and optionally RDP/VNC passwords you configure. Stored in a local database on your device.
 - **SSH keys**: private keys you generate or import. Stored in encrypted local storage on your device.
-- **App preferences**: settings such as theme, font size, and biometric lock preference. Stored in local preferences on your device.
+- **Known hosts**: SSH server fingerprints accepted via trust-on-first-use. Stored locally.
+- **App preferences**: settings such as theme, font size, color scheme, biometric lock preference, and lock timeout. Stored in local preferences on your device.
 
 ## Network Activity
 
-Haven connects only to SSH servers that you explicitly configure. No other network connections are made. Haven does not contact any analytics, tracking, or advertising services.
+Haven connects only to servers that you explicitly configure:
+
+- **SSH/Mosh/ET**: connections to SSH servers you add as profiles.
+- **VNC**: connections to VNC servers you add as profiles, optionally tunnelled through SSH.
+- **RDP**: connections to RDP servers you add as profiles, optionally tunnelled through SSH.
+- **SFTP**: file transfer over your existing SSH connections.
+- **Reticulum**: connections over Reticulum mesh networks when configured.
+- **Local network scan** (optional): when you tap "Scan Network" in the connection dialog, Haven probes your local subnet for SSH servers (port 22). This scan is limited to your local network and no data is sent externally.
+
+No other network connections are made. Haven does not contact any analytics, tracking, or advertising services.
 
 ## Permissions
 
-- **Internet**: required to establish SSH connections to your servers.
+- **Internet**: required to connect to your servers (SSH, VNC, RDP, SFTP) and for optional local network scanning.
 - **Biometric**: optional, used to lock app access behind fingerprint or face authentication.
+- **File access**: used only when importing SSH key files or transferring files via SFTP. Haven does not access files without user action.
 
 ## Third-Party Services
 
