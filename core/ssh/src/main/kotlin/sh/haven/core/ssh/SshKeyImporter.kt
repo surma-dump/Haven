@@ -60,9 +60,16 @@ object SshKeyImporter {
             // Store decrypted key so passphrase isn't needed at connect time.
             // For unencrypted keys, store the original bytes unchanged.
             val storedBytes = if (passphrase != null) {
-                val out = ByteArrayOutputStream()
-                kpair.writePrivateKey(out)
-                out.toByteArray()
+                try {
+                    val out = ByteArrayOutputStream()
+                    kpair.writePrivateKey(out)
+                    out.toByteArray()
+                } catch (_: UnsupportedOperationException) {
+                    // JSch can't re-serialize some key types (e.g. Ed25519).
+                    // Fall back to storing original bytes — passphrase will be
+                    // needed at connect time via the password dialog.
+                    fileBytes
+                }
             } else {
                 fileBytes
             }
