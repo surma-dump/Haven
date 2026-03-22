@@ -31,6 +31,8 @@ class UserPreferencesRepository @Inject constructor(
     private val sftpSortModeKey = stringPreferencesKey("sftp_sort_mode")
     private val lockTimeoutKey = stringPreferencesKey("lock_timeout")
     private val screenSecurityKey = booleanPreferencesKey("screen_security")
+    private val showSearchButtonKey = booleanPreferencesKey("show_search_button")
+    private val showCopyOutputButtonKey = booleanPreferencesKey("show_copy_output_button")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -44,6 +46,28 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setScreenSecurity(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[screenSecurityKey] = enabled
+        }
+    }
+
+    /** Show search button in terminal tab bar. Sends session manager's native search keys. */
+    val showSearchButton: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[showSearchButtonKey] ?: false
+    }
+
+    suspend fun setShowSearchButton(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[showSearchButtonKey] = enabled
+        }
+    }
+
+    /** Show copy-last-output button in terminal tab bar. Requires shell OSC 133 integration. */
+    val showCopyOutputButton: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[showCopyOutputButtonKey] ?: false
+    }
+
+    suspend fun setShowCopyOutputButton(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[showCopyOutputButtonKey] = enabled
         }
     }
 

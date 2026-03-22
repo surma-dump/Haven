@@ -1,5 +1,6 @@
 package sh.haven.feature.settings
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.ScreenLockPortrait
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardAlt
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.AlertDialog
@@ -90,6 +93,8 @@ fun SettingsScreen(
     val colorScheme by viewModel.terminalColorScheme.collectAsState()
     val toolbarLayout by viewModel.toolbarLayout.collectAsState()
     val toolbarLayoutJson by viewModel.toolbarLayoutJson.collectAsState()
+    val showSearchButton by viewModel.showSearchButton.collectAsState()
+    val showCopyOutputButton by viewModel.showCopyOutputButton.collectAsState()
     val backupStatus by viewModel.backupStatus.collectAsState()
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showSessionManagerDialog by remember { mutableStateOf(false) }
@@ -99,6 +104,7 @@ fun SettingsScreen(
     var showToolbarConfigDialog by remember { mutableStateOf(false) }
     var showBackupPasswordDialog by remember { mutableStateOf<BackupAction?>(null) }
     var showLockTimeoutDialog by remember { mutableStateOf(false) }
+    var showOsc133SetupDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
@@ -191,6 +197,23 @@ fun SettingsScreen(
             title = "Keyboard toolbar",
             subtitle = "Configure toolbar keys and layout",
             onClick = { showToolbarConfigDialog = true },
+        )
+        SettingsToggleItem(
+            icon = Icons.Filled.Search,
+            title = "Search button",
+            subtitle = "Show search icon in tab bar — sends your session manager's native search keys (tmux/zellij/screen) or shell Ctrl+R",
+            checked = showSearchButton,
+            onCheckedChange = viewModel::setShowSearchButton,
+        )
+        SettingsToggleItem(
+            icon = Icons.Filled.ContentCopy,
+            title = "Copy last output",
+            subtitle = "Show copy icon in tab bar — copies the last command's output. Requires shell integration (tap for setup)",
+            checked = showCopyOutputButton,
+            onCheckedChange = { enabled ->
+                viewModel.setShowCopyOutputButton(enabled)
+                if (enabled) showOsc133SetupDialog = true
+            },
         )
         SettingsItem(
             icon = Icons.Filled.ColorLens,
@@ -377,6 +400,74 @@ fun SettingsScreen(
                         viewModel.importBackup(action.uri, password)
                     }
                 }
+            },
+        )
+    }
+
+    if (showOsc133SetupDialog) {
+        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val bashSnippet = """# Add to ~/.bashrc
+PS0='\[\e]133;C\a\]'
+PS1='\[\e]133;D;${'$'}?\a\e]133;A\a\]'${'$'}PS1'\[\e]133;B\a\]'"""
+        val zshSnippet = """# Add to ~/.zshrc
+precmd()  { print -Pn '\e]133;D;%?\a\e]133;A\a' }
+preexec() { print -Pn '\e]133;B\a\e]133;C\a' }"""
+        AlertDialog(
+            onDismissRequest = { showOsc133SetupDialog = false },
+            title = { Text("Shell integration setup") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Copy last output requires your shell to emit OSC 133 markers. " +
+                        "Add one of these snippets to your shell config:",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("Bash", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        bashSnippet,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small)
+                            .padding(8.dp)
+                            .clickable {
+                                clipboardManager.setPrimaryClip(android.content.ClipData.newPlainText("bash", bashSnippet))
+                                android.widget.Toast.makeText(context, "Copied bash snippet", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("Zsh", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        zshSnippet,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.small)
+                            .padding(8.dp)
+                            .clickable {
+                                clipboardManager.setPrimaryClip(android.content.ClipData.newPlainText("zsh", zshSnippet))
+                                android.widget.Toast.makeText(context, "Copied zsh snippet", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Tap a snippet to copy it. Many tools (iTerm2, VS Code, WezTerm) include these markers by default.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md")))
+                }) { Text("Learn more") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showOsc133SetupDialog = false }) { Text("Done") }
             },
         )
     }

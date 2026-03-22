@@ -81,6 +81,12 @@ class SettingsViewModel @Inject constructor(
     val screenSecurity: StateFlow<Boolean> = preferencesRepository.screenSecurity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val showSearchButton: StateFlow<Boolean> = preferencesRepository.showSearchButton
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val showCopyOutputButton: StateFlow<Boolean> = preferencesRepository.showCopyOutputButton
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val terminalFontSize: StateFlow<Int> = preferencesRepository.terminalFontSize
         .stateIn(
             viewModelScope,
@@ -155,6 +161,18 @@ class SettingsViewModel @Inject constructor(
     fun setScreenSecurity(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setScreenSecurity(enabled)
+        }
+    }
+
+    fun setShowSearchButton(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowSearchButton(enabled)
+        }
+    }
+
+    fun setShowCopyOutputButton(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowCopyOutputButton(enabled)
         }
     }
 

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DesktopWindows
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -102,6 +103,8 @@ fun TerminalScreen(
     terminalModifier: Modifier = Modifier,
     fontSize: Int = UserPreferencesRepository.DEFAULT_FONT_SIZE,
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
+    showSearchButton: Boolean = false,
+    showCopyOutputButton: Boolean = false,
     onNavigateToConnections: () -> Unit = {},
     onNavigateToVnc: (host: String, port: Int, password: String?, sshForward: Boolean, sshSessionId: String?) -> Unit = { _, _, _, _, _ -> },
     onSelectionActiveChanged: (Boolean) -> Unit = {},
@@ -289,15 +292,38 @@ fun TerminalScreen(
                     )
                 }
             } // PrimaryScrollableTabRow
-                IconButton(
-                    onClick = { viewModel.sendSearchKeys() },
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.Search,
-                        contentDescription = "Search",
-                        modifier = Modifier.size(18.dp),
-                    )
+                if (showCopyOutputButton) {
+                    IconButton(
+                        onClick = {
+                            val output = viewModel.copyLastCommandOutput()
+                            if (output != null) {
+                                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clip.setPrimaryClip(ClipData.newPlainText("command output", output))
+                                android.widget.Toast.makeText(context, "Copied output (${output.length} chars)", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                android.widget.Toast.makeText(context, "No command output found (needs shell integration)", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = "Copy last output",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                if (showSearchButton) {
+                    IconButton(
+                        onClick = { viewModel.sendSearchKeys() },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = "Search",
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             } // Row
 

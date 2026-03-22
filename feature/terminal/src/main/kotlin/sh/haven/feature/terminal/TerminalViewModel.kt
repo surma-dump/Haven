@@ -307,6 +307,17 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Copy the last completed command's output to clipboard.
+     * Uses OSC 133 semantic markers (COMMAND_INPUT → COMMAND_FINISHED) to extract output.
+     * Returns the output text, or null if no completed command found (shell needs
+     * OSC 133 support, e.g. bash/zsh with shell integration configured).
+     */
+    fun copyLastCommandOutput(): String? {
+        val tab = _tabs.value.getOrNull(_activeTabIndex.value) ?: return null
+        return tab.emulator.getLastCommandOutput()
+    }
+
     /** Save VNC settings for a profile. */
     fun saveVncSettings(profileId: String, port: Int, password: String?, sshForward: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
