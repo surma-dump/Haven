@@ -32,6 +32,7 @@ class LocalSession(
 
     private var masterFd: Int = -1
     private var childPid: Int = -1
+    private var masterPfd: ParcelFileDescriptor? = null
     private var inputStream: FileInputStream? = null
     private var outputStream: FileOutputStream? = null
     private var readerThread: Thread? = null
@@ -58,21 +59,24 @@ class LocalSession(
         Log.d(TAG, "Started local process: pid=$childPid fd=$masterFd cmd=$command")
 
         val pfd = ParcelFileDescriptor.adoptFd(masterFd)
+        masterPfd = pfd  // prevent GC from closing the fd
         inputStream = FileInputStream(pfd.fileDescriptor)
         outputStream = FileOutputStream(pfd.fileDescriptor)
 
         // Start reader thread
         readerThread = Thread({
             val buf = ByteArray(READ_BUFFER_SIZE)
+            var readCount = 0
             try {
                 while (!closed) {
                     val n = inputStream!!.read(buf)
                     if (n <= 0) break
+                    readCount++
                     onDataReceived(buf, 0, n)
                 }
             } catch (e: Exception) {
                 if (!closed) {
-                    Log.d(TAG, "Read loop ended: ${e.message}")
+                    Log.d(TAG, "Read loop ended (after $readCount reads): ${e.message}")
                 }
             }
             // Process exited — wait for exit code
@@ -123,6 +127,7 @@ class LocalSession(
         // Close streams — this will cause the read loop to exit
         try { outputStream?.close() } catch (_: Exception) {}
         try { inputStream?.close() } catch (_: Exception) {}
+        try { masterPfd?.close() } catch (_: Exception) {}
 
         // Kill the child process if still running
         if (childPid > 0) {
@@ -135,6 +140,7 @@ class LocalSession(
         readerThread = null
         inputStream = null
         outputStream = null
+        masterPfd = null
         masterFd = -1
         childPid = -1
     }

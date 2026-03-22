@@ -93,7 +93,7 @@ class LocalSessionManager @Inject constructor(
                 "-b", "/sys",
                 "-b", "/storage",
                 "-w", "/root",
-                "/bin/sh", "-l",
+                "/bin/busybox", "sh", "-l",
             )
             val env = arrayOf(
                 "HOME=/root",
@@ -103,6 +103,7 @@ class LocalSessionManager @Inject constructor(
                 "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                 "SHELL=/bin/sh",
                 "PROOT_TMP_DIR=${context.cacheDir.absolutePath}",
+                "PROOT_LOADER=${java.io.File(context.applicationInfo.nativeLibraryDir, "libproot_loader.so").absolutePath}",
             )
             Triple(cmd, args, env)
         } else {

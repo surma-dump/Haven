@@ -46,7 +46,10 @@ class ProotManager @Inject constructor(
         get() = File(context.filesDir, "proot/rootfs/alpine")
 
     val isRootfsInstalled: Boolean
-        get() = File(rootfsDir, "bin/sh").exists()
+        get() = java.nio.file.Files.exists(
+            File(rootfsDir, "bin/sh").toPath(),
+            java.nio.file.LinkOption.NOFOLLOW_LINKS,
+        )
 
     val prootBinary: String?
         get() {
@@ -124,26 +127,169 @@ class ProotManager @Inject constructor(
     }
 
     /**
-     * Extract a .tar.gz file to a directory.
-     * Uses the system tar command (available on Android since API 1).
+     * Extract a .tar.gz file to a directory using Java streams.
+     * Implements minimal POSIX tar parsing (512-byte headers, ustar format).
      */
     private fun extractTarGz(tarball: File, destDir: File) {
         destDir.mkdirs()
+        var fileCount = 0
+        var symlinkCount = 0
 
-        val process = ProcessBuilder(
-            "tar", "xzf", tarball.absolutePath, "-C", destDir.absolutePath
-        ).redirectErrorStream(true).start()
+        java.util.zip.GZIPInputStream(tarball.inputStream().buffered()).use { gzIn ->
+            val header = ByteArray(512)
+            var pendingLongName: String? = null
 
-        val output = process.inputStream.bufferedReader().readText()
-        val exitCode = process.waitFor()
+            while (true) {
+                val headerRead = readFully(gzIn, header)
+                if (headerRead < 512) break
+                if (header.all { it == 0.toByte() }) break
 
-        if (exitCode != 0) {
-            throw RuntimeException("tar extraction failed (exit $exitCode): $output")
+                val name = extractString(header, 0, 100)
+                if (name.isEmpty() && pendingLongName == null) break
+
+                val modeStr = extractString(header, 100, 8)
+                val sizeStr = extractString(header, 124, 12)
+                val typeFlag = header[156]
+                val linkTarget = extractString(header, 157, 100)
+
+                val size = try {
+                    sizeStr.trim().toLong(8)
+                } catch (_: Exception) { 0L }
+
+                // GNU long name: type 'L' means the data is a long filename
+                // for the NEXT entry
+                if (typeFlag == 'L'.code.toByte()) {
+                    val nameBytes = ByteArray(size.toInt())
+                    readFully(gzIn, nameBytes)
+                    skipToBlock(gzIn, size)
+                    pendingLongName = String(nameBytes).trimEnd('\u0000')
+                    continue // next header is the actual entry
+                }
+
+                // Resolve final name
+                val entryName = pendingLongName ?: run {
+                    val prefix = extractString(header, 345, 155)
+                    if (prefix.isNotEmpty()) "$prefix/$name" else name
+                }
+                pendingLongName = null
+
+                val outFile = File(destDir, entryName)
+
+                when (typeFlag) {
+                    '5'.code.toByte() -> {
+                        outFile.mkdirs()
+                    }
+                    '2'.code.toByte() -> {
+                        // Symlink
+                        outFile.parentFile?.mkdirs()
+                        try {
+                            outFile.delete()
+                            java.nio.file.Files.createSymbolicLink(
+                                outFile.toPath(),
+                                java.nio.file.Paths.get(linkTarget),
+                            )
+                            symlinkCount++
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Symlink failed: $entryName -> $linkTarget: ${e.message}")
+                        }
+                    }
+                    '1'.code.toByte() -> {
+                        // Hard link — copy the target file
+                        outFile.parentFile?.mkdirs()
+                        try {
+                            val targetFile = File(destDir, linkTarget)
+                            if (targetFile.exists()) {
+                                targetFile.copyTo(outFile, overwrite = true)
+                            }
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Hard link failed: $entryName -> $linkTarget: ${e.message}")
+                        }
+                    }
+                    '0'.code.toByte(), 0.toByte() -> {
+                        // Regular file
+                        outFile.parentFile?.mkdirs()
+                        FileOutputStream(outFile).use { fos ->
+                            var remaining = size
+                            val copyBuf = ByteArray(8192)
+                            while (remaining > 0) {
+                                val toRead = minOf(remaining.toInt(), copyBuf.size)
+                                val n = gzIn.read(copyBuf, 0, toRead)
+                                if (n <= 0) break
+                                fos.write(copyBuf, 0, n)
+                                remaining -= n
+                            }
+                        }
+                        try {
+                            val mode = modeStr.trim().toIntOrNull(8) ?: 0
+                            if (mode and 0x49 != 0) {
+                                outFile.setExecutable(true, false)
+                            }
+                        } catch (_: Exception) {}
+                        skipToBlock(gzIn, size)
+                        fileCount++
+                    }
+                    else -> {
+                        // Skip unknown types (but still consume data)
+                        if (size > 0) {
+                            var remaining = size
+                            val skipBuf = ByteArray(8192)
+                            while (remaining > 0) {
+                                val toRead = minOf(remaining.toInt(), skipBuf.size)
+                                val n = gzIn.read(skipBuf, 0, toRead)
+                                if (n <= 0) break
+                                remaining -= n
+                            }
+                            skipToBlock(gzIn, size)
+                        }
+                    }
+                }
+
+                // Also handle directory entries without explicit type flag
+                if (typeFlag != '5'.code.toByte() && entryName.endsWith("/")) {
+                    outFile.mkdirs()
+                }
+            }
         }
 
-        // Ensure /bin/sh exists (sanity check)
-        if (!File(destDir, "bin/sh").exists()) {
-            throw RuntimeException("Extraction succeeded but bin/sh not found in rootfs")
+        Log.d(TAG, "Extracted $fileCount files, $symlinkCount symlinks to ${destDir.absolutePath}")
+
+        // Check bin/sh exists — it's a symlink to /bin/busybox so we must
+        // not follow the link (the target is inside the rootfs, not the host)
+        val binSh = File(destDir, "bin/sh").toPath()
+        if (!java.nio.file.Files.exists(binSh, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            val binDir = File(destDir, "bin")
+            val binContents = if (binDir.isDirectory) binDir.list()?.toList() else null
+            throw RuntimeException(
+                "Extracted $fileCount files, $symlinkCount symlinks but bin/sh not found. " +
+                    "bin/ contents: $binContents"
+            )
+        }
+    }
+
+    private fun readFully(input: java.io.InputStream, buf: ByteArray): Int {
+        var total = 0
+        while (total < buf.size) {
+            val n = input.read(buf, total, buf.size - total)
+            if (n <= 0) break
+            total += n
+        }
+        return total
+    }
+
+    private fun extractString(buf: ByteArray, offset: Int, length: Int): String {
+        var end = offset + length
+        for (i in offset until offset + length) {
+            if (buf[i] == 0.toByte()) { end = i; break }
+        }
+        return String(buf, offset, end - offset, Charsets.US_ASCII).trim()
+    }
+
+    /** Skip remaining bytes in the current tar block (blocks are 512-byte aligned). */
+    private fun skipToBlock(input: java.io.InputStream, dataSize: Long) {
+        val remainder = (512 - (dataSize % 512)) % 512
+        if (remainder > 0) {
+            val skip = ByteArray(remainder.toInt())
+            readFully(input, skip)
         }
     }
 
