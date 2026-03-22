@@ -34,6 +34,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:smb"))
     implementation(project(":core:fido"))
+    implementation(project(":core:local"))
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

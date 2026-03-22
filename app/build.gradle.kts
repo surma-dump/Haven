@@ -112,6 +112,7 @@ dependencies {
     implementation(project(":core:rdp"))
     implementation(project(":core:smb"))
     implementation(project(":core:fido"))
+    implementation(project(":core:local"))
 
     implementation(project(":feature:connections"))
     implementation(project(":feature:terminal"))

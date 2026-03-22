@@ -36,6 +36,7 @@ dependencies {
     implementation(project(":core:reticulum"))
     implementation(project(":core:mosh"))
     implementation(project(":core:et"))
+    implementation(project(":core:local"))
     implementation(project(":core:security"))
 
     implementation(libs.termlib)
