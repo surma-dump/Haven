@@ -17,7 +17,7 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.nio.ByteBuffer
-import java.util.concurrent.ConcurrentHashMap
+
 
 private const val TAG = "SshClient"
 
@@ -278,26 +278,20 @@ class SshClient : Closeable {
     override fun close() = disconnect()
 
     companion object {
-        /**
-         * Cache resolved hostnames → IP addresses across all SshClient instances.
-         * Avoids repeated slow DNS lookups (especially for .local mDNS names on Android,
-         * where the system resolver tries unicast DNS first with a ~4s timeout).
-         */
-        private val dnsCache = ConcurrentHashMap<String, String>()
-
-        fun clearDnsCache() { dnsCache.clear() }
+        /** No-op, kept for API compatibility. DNS is resolved fresh on each connection. */
+        fun clearDnsCache() { }
 
         /**
          * Resolve a hostname to an IP address string.
          * For .local hostnames, tries a direct mDNS query first (fast, ~50-100ms)
          * before falling back to the system resolver.
-         * Results are cached for the lifetime of the process.
+         * Resolved fresh each time — no application-level caching — so network
+         * changes (e.g. switching between local and remote DNS) take effect
+         * without restarting the app.
          */
         fun resolveHost(hostname: String): String {
             // Already an IP literal — skip resolution
             if (hostname.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))) return hostname
-
-            dnsCache[hostname]?.let { return it }
 
             val ip = if (hostname.endsWith(".local") || hostname.endsWith(".local.")) {
                 resolveMdns(hostname) ?: resolveSystem(hostname)
@@ -305,10 +299,7 @@ class SshClient : Closeable {
                 resolveSystem(hostname)
             }
 
-            if (ip != null) {
-                dnsCache[hostname] = ip
-                return ip
-            }
+            if (ip != null) return ip
 
             Log.w(TAG, "Failed to resolve $hostname, using as-is")
             return hostname
