@@ -100,6 +100,7 @@ fun SettingsScreen(
     val showCopyOutputButton by viewModel.showCopyOutputButton.collectAsState()
     val connectionLoggingEnabled by viewModel.connectionLoggingEnabled.collectAsState()
     val verboseLoggingEnabled by viewModel.verboseLoggingEnabled.collectAsState()
+    val mouseInputEnabled by viewModel.mouseInputEnabled.collectAsState()
     val backupStatus by viewModel.backupStatus.collectAsState()
     var showAuditLog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
@@ -247,6 +248,13 @@ fun SettingsScreen(
                 viewModel.setShowCopyOutputButton(enabled)
                 if (enabled) showOsc133SetupDialog = true
             },
+        )
+        SettingsToggleItem(
+            icon = Icons.Filled.Terminal,
+            title = "Mouse input in TUI apps",
+            subtitle = "Forward taps as clicks and long-press as right-click when apps like htop, mc, or vim enable mouse tracking",
+            checked = mouseInputEnabled,
+            onCheckedChange = viewModel::setMouseInputEnabled,
         )
         SettingsItem(
             icon = Icons.Filled.ColorLens,

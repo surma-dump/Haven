@@ -93,6 +93,9 @@ class SettingsViewModel @Inject constructor(
     val verboseLoggingEnabled: StateFlow<Boolean> = preferencesRepository.verboseLoggingEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val mouseInputEnabled: StateFlow<Boolean> = preferencesRepository.mouseInputEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val terminalFontSize: StateFlow<Int> = preferencesRepository.terminalFontSize
         .stateIn(
             viewModelScope,
@@ -191,6 +194,12 @@ class SettingsViewModel @Inject constructor(
     fun setVerboseLoggingEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setVerboseLoggingEnabled(enabled)
+        }
+    }
+
+    fun setMouseInputEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setMouseInputEnabled(enabled)
         }
     }
 

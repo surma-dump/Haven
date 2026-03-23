@@ -35,6 +35,7 @@ class UserPreferencesRepository @Inject constructor(
     private val showCopyOutputButtonKey = booleanPreferencesKey("show_copy_output_button")
     private val connectionLoggingEnabledKey = booleanPreferencesKey("connection_logging_enabled")
     private val verboseLoggingEnabledKey = booleanPreferencesKey("verbose_logging_enabled")
+    private val mouseInputEnabledKey = booleanPreferencesKey("mouse_input_enabled")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -92,6 +93,17 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setVerboseLoggingEnabled(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[verboseLoggingEnabledKey] = enabled
+        }
+    }
+
+    /** Forward taps/long-press as mouse clicks to TUI apps (htop, mc, vim). */
+    val mouseInputEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[mouseInputEnabledKey] ?: true
+    }
+
+    suspend fun setMouseInputEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[mouseInputEnabledKey] = enabled
         }
     }
 

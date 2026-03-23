@@ -105,6 +105,7 @@ fun TerminalScreen(
     toolbarLayout: ToolbarLayout = ToolbarLayout.DEFAULT,
     showSearchButton: Boolean = false,
     showCopyOutputButton: Boolean = false,
+    mouseInputEnabled: Boolean = true,
     onNavigateToConnections: () -> Unit = {},
     onNavigateToVnc: (host: String, port: Int, password: String?, sshForward: Boolean, sshSessionId: String?) -> Unit = { _, _, _, _, _ -> },
     onSelectionActiveChanged: (Boolean) -> Unit = {},
@@ -392,6 +393,9 @@ fun TerminalScreen(
                     }
 
                     val isMouseMode by activeTab.mouseMode.collectAsState()
+                    // Mouse clicks (tap/long-press) only when setting enabled;
+                    // scroll wheel always works when TUI app requests mouse mode.
+                    val isMouseClickMode = isMouseMode && mouseInputEnabled
                     val currentActiveMouseMode by activeTab.activeMouseMode.collectAsState()
                     val isBracketPaste by activeTab.bracketPasteMode.collectAsState()
                     var surfaceSize by remember { mutableStateOf(IntSize.Zero) }
@@ -412,10 +416,11 @@ fun TerminalScreen(
                         modifier = Modifier
                             .weight(1f)
                             .onSizeChanged { surfaceSize = it }
-                            .pointerInput(activeTab.sessionId, isMouseMode) {
+                            .pointerInput(activeTab.sessionId, isMouseMode, mouseInputEnabled) {
                                 terminalGestureInterceptor(
                                     activeTab = activeTab,
                                     mouseMode = isMouseMode,
+                                    mouseClickMode = isMouseClickMode,
                                     isSelectionActive = { selectionController?.isSelectionActive == true },
                                     selectionController = { selectionController },
                                     surfaceSize = { surfaceSize },
@@ -461,7 +466,7 @@ fun TerminalScreen(
                                 onFontSizeChanged = { newSize ->
                                     viewModel.setFontSize(newSize.value.toInt())
                                 },
-                                mouseMode = isMouseMode,
+                                mouseMode = isMouseClickMode,
                             )
                         }
 
@@ -794,6 +799,7 @@ private const val EDGE_SCROLL_INTERVAL_MS = 150L
 private suspend fun PointerInputScope.terminalGestureInterceptor(
     activeTab: TerminalTab,
     mouseMode: Boolean,
+    mouseClickMode: Boolean = mouseMode,
     isSelectionActive: () -> Boolean,
     selectionController: () -> org.connectbot.terminal.SelectionController?,
     surfaceSize: () -> IntSize,
@@ -849,8 +855,8 @@ private suspend fun PointerInputScope.terminalGestureInterceptor(
                     kind = GestureKind.SELECTION
                 }
 
-                // In mouse mode: detect long-press for right-click while still UNDECIDED
-                if (mouseMode && kind == GestureKind.UNDECIDED && !longPressHandled) {
+                // In mouse click mode: detect long-press for right-click while still UNDECIDED
+                if (mouseClickMode && kind == GestureKind.UNDECIDED && !longPressHandled) {
                     val elapsed = System.currentTimeMillis() - touchDownTime
                     if (elapsed >= MOUSE_LONG_PRESS_MS) {
                         longPressHandled = true
@@ -891,7 +897,7 @@ private suspend fun PointerInputScope.terminalGestureInterceptor(
 
                 when (kind) {
                     GestureKind.UNDECIDED -> {
-                        if (mouseMode || inCooldown || inPinchCooldown) change.consume()
+                        if (mouseClickMode || inCooldown || inPinchCooldown) change.consume()
                     }
 
                     GestureKind.MOUSE_CLICK -> {
@@ -973,7 +979,7 @@ private suspend fun PointerInputScope.terminalGestureInterceptor(
 
             // Finger lifted — handle tap (UNDECIDED means no drag/long-press occurred)
             val sincePinchEnd = System.currentTimeMillis() - lastMultiTouchTime
-            if (mouseMode && kind == GestureKind.UNDECIDED && !longPressHandled && sincePinchEnd > MULTITOUCH_LIFTOFF_MS) {
+            if (mouseClickMode && kind == GestureKind.UNDECIDED && !longPressHandled && sincePinchEnd > MULTITOUCH_LIFTOFF_MS) {
                 // Tap: send left click (button 0) press + release
                 val size = surfaceSize()
                 if (size.width > 0 && size.height > 0) {
