@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.ScreenLockPortrait
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
@@ -150,6 +151,7 @@ fun SettingsScreen(
     val terminalRightClick by viewModel.terminalRightClick.collectAsState()
     val allowStandardKeyboard by viewModel.allowStandardKeyboard.collectAsState()
     val hideExtraToolbarWithExternalKeyboard by viewModel.hideExtraToolbarWithExternalKeyboard.collectAsState()
+    val terminalTextSelectionEnabledByDefault by viewModel.terminalTextSelectionEnabledByDefault.collectAsState()
     val backupStatus by viewModel.backupStatus.collectAsState()
     val waylandShellCommand by viewModel.waylandShellCommand.collectAsState()
     val mediaExtensions by viewModel.mediaExtensions.collectAsState()
@@ -324,6 +326,13 @@ fun SettingsScreen(
             subtitle = "When an external keyboard is connected, hide the Ctrl/Alt toolbar in Terminal, VNC, and RDP",
             checked = hideExtraToolbarWithExternalKeyboard,
             onCheckedChange = viewModel::setHideExtraToolbarWithExternalKeyboard,
+        )
+        SettingsToggleItem(
+            icon = Icons.Filled.SelectAll,
+            title = "Terminal text selection enabled by default",
+            subtitle = "When off, long-press selection starts disabled and can be turned on with the corner checkbox",
+            checked = terminalTextSelectionEnabledByDefault,
+            onCheckedChange = viewModel::setTerminalTextSelectionEnabledByDefault,
         )
         SettingsToggleItem(
             icon = Icons.Filled.Search,

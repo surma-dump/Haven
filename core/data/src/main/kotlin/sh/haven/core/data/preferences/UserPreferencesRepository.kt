@@ -42,6 +42,8 @@ class UserPreferencesRepository @Inject constructor(
     private val allowStandardKeyboardKey = booleanPreferencesKey("allow_standard_keyboard")
     private val hideExtraToolbarWithExternalKeyboardKey =
         booleanPreferencesKey("hide_extra_toolbar_with_external_keyboard")
+    private val terminalTextSelectionEnabledByDefaultKey =
+        booleanPreferencesKey("terminal_text_selection_enabled_by_default")
     private val reorderHintShownKey = booleanPreferencesKey("reorder_hint_shown")
     private val screenOrderKey = stringPreferencesKey("screen_order")
     private val waylandShellCommandKey = stringPreferencesKey("wayland_shell_command")
@@ -154,6 +156,17 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setHideExtraToolbarWithExternalKeyboard(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[hideExtraToolbarWithExternalKeyboardKey] = enabled
+        }
+    }
+
+    /** Whether terminal text selection starts enabled for new terminal sessions. */
+    val terminalTextSelectionEnabledByDefault: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[terminalTextSelectionEnabledByDefaultKey] ?: true
+    }
+
+    suspend fun setTerminalTextSelectionEnabledByDefault(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[terminalTextSelectionEnabledByDefaultKey] = enabled
         }
     }
 

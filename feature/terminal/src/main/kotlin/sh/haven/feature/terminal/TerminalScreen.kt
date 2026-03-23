@@ -122,6 +122,7 @@ fun TerminalScreen(
     terminalRightClick: Boolean = false,
     allowStandardKeyboard: Boolean = false,
     hideExtraToolbarWithExternalKeyboard: Boolean = false,
+    terminalTextSelectionEnabledByDefault: Boolean = true,
     onNavigateToConnections: () -> Unit = {},
     onNavigateToVnc: (host: String, port: Int, password: String?, sshForward: Boolean, sshSessionId: String?) -> Unit = { _, _, _, _, _ -> },
     onSelectionActiveChanged: (Boolean) -> Unit = {},
@@ -160,6 +161,10 @@ fun TerminalScreen(
     val view = LocalView.current
     val hasExternalKeyboard = rememberHasExternalKeyboard()
     val showExtraToolbar = !(hideExtraToolbarWithExternalKeyboard && hasExternalKeyboard)
+    var selectionEnabled by rememberSaveable(terminalTextSelectionEnabledByDefault) {
+        mutableStateOf(terminalTextSelectionEnabledByDefault)
+    }
+    val selectionToggleVisible = !terminalTextSelectionEnabledByDefault
 
     LaunchedEffect(navigateToConnections) {
         if (navigateToConnections) {
@@ -496,12 +501,13 @@ fun TerminalScreen(
                     // isSelectionActive is backed by Compose MutableState, so
                     // this block recomposes when selection starts/ends.
                     val selectionActive = selectionController?.isSelectionActive == true
+                    val effectiveSelectionActive = selectionEnabled && selectionActive
 
                     // Register Activity-level key interceptor for layout-aware
                     // character mapping. This fires in dispatchKeyEvent() BEFORE
                     // the View hierarchy, bypassing termlib's hardcoded US QWERTY
                     // symbol table.
-                    val currentSelectionActive by rememberUpdatedState(selectionActive)
+                    val currentSelectionActive by rememberUpdatedState(effectiveSelectionActive)
                     val configuration = LocalConfiguration.current
                     val hasHardwareKeyboard by rememberUpdatedState(
                         configuration.keyboard != android.content.res.Configuration.KEYBOARD_NOKEYS,
@@ -522,10 +528,18 @@ fun TerminalScreen(
                     }
                     val currentHyperlinkUri by activeTab.hyperlinkUri.collectAsState()
 
-                    LaunchedEffect(selectionActive) {
-                        onSelectionActiveChanged(selectionActive)
-                        if (selectionActive && selectionController != null) {
-                            expandSelectionToWord(selectionController!!, activeTab.emulator)
+                    LaunchedEffect(effectiveSelectionActive) {
+                        onSelectionActiveChanged(effectiveSelectionActive)
+                    }
+
+                    LaunchedEffect(selectionEnabled, selectionActive, selectionController, activeTab.emulator) {
+                        val controller = selectionController ?: return@LaunchedEffect
+                        if (!selectionEnabled) {
+                            if (selectionActive) controller.clearSelection()
+                            return@LaunchedEffect
+                        }
+                        if (selectionActive) {
+                            expandSelectionToWord(controller, activeTab.emulator)
                         }
                     }
 
@@ -643,6 +657,24 @@ fun TerminalScreen(
                             )
                         }
 
+                        if (!showExtraToolbar && selectionToggleVisible) {
+                            Surface(
+                                tonalElevation = 2.dp,
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(8.dp),
+                            ) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = selectionEnabled,
+                                    onCheckedChange = { enabled ->
+                                        selectionEnabled = enabled
+                                        if (!enabled) selectionController?.clearSelection()
+                                    },
+                                )
+                            }
+                        }
+
                     }
 
                     if (showExtraToolbar) {
@@ -680,8 +712,14 @@ fun TerminalScreen(
                                 }
                             }} else null,
                             vncLoading = localVncLoading,
+                            selectionToggleVisible = selectionToggleVisible,
+                            selectionEnabled = selectionEnabled,
+                            onSelectionEnabledChange = { enabled ->
+                                selectionEnabled = enabled
+                                if (!enabled) selectionController?.clearSelection()
+                            },
                             selectionController = selectionController,
-                            selectionActive = selectionActive,
+                            selectionActive = effectiveSelectionActive,
                             hyperlinkUri = currentHyperlinkUri,
                             onPaste = { text -> activeTab.sendInput(text.toByteArray()) },
                             reorderMode = reorderMode,
