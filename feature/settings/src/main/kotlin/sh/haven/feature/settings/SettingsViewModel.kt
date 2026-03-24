@@ -104,6 +104,9 @@ class SettingsViewModel @Inject constructor(
         preferencesRepository.terminalTextSelectionEnabledByDefault
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val showTerminalTabBar: StateFlow<Boolean> = preferencesRepository.showTerminalTabBar
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val terminalFontSize: StateFlow<Int> = preferencesRepository.terminalFontSize
         .stateIn(
             viewModelScope,
@@ -220,6 +223,12 @@ class SettingsViewModel @Inject constructor(
     fun setTerminalTextSelectionEnabledByDefault(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setTerminalTextSelectionEnabledByDefault(enabled)
+        }
+    }
+
+    fun setShowTerminalTabBar(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowTerminalTabBar(enabled)
         }
     }
 

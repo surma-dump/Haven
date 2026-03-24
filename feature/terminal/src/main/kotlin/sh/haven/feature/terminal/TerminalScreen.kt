@@ -112,6 +112,7 @@ fun TerminalScreen(
     mouseInputEnabled: Boolean = true,
     hideExtraToolbarWithExternalKeyboard: Boolean = false,
     terminalTextSelectionEnabledByDefault: Boolean = true,
+    showTabBar: Boolean = true,
     onNavigateToConnections: () -> Unit = {},
     onNavigateToVnc: (host: String, port: Int, password: String?, sshForward: Boolean, sshSessionId: String?) -> Unit = { _, _, _, _, _ -> },
     onSelectionActiveChanged: (Boolean) -> Unit = {},
@@ -225,7 +226,6 @@ fun TerminalScreen(
                 foregroundColor = Color(colorScheme.foreground),
             )
         } else {
-            // Tab row — always show when tabs exist so "+" button is accessible
             val profileColors = remember(tabs) {
                 tabs.map { it.profileId }.distinct()
                     .withIndex().associate { (i, id) ->
@@ -235,110 +235,112 @@ fun TerminalScreen(
             val clampedIndex = activeTabIndex.coerceIn(0, tabs.size - 1)
             val indicatorColor = profileColors[tabs.getOrNull(clampedIndex)?.profileId]
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-            PrimaryScrollableTabRow(
-                selectedTabIndex = clampedIndex,
-                modifier = Modifier.weight(1f),
-                edgePadding = 8.dp,
-                indicator = {
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(clampedIndex),
-                        color = indicatorColor ?: MaterialTheme.colorScheme.primary,
-                    )
-                },
-            ) {
+            if (showTabBar) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PrimaryScrollableTabRow(
+                        selectedTabIndex = clampedIndex,
+                        modifier = Modifier.weight(1f),
+                        edgePadding = 8.dp,
+                        indicator = {
+                            TabRowDefaults.SecondaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(clampedIndex),
+                                color = indicatorColor ?: MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    ) {
 
-                tabs.forEachIndexed { index, tab ->
-                    val reconnecting by tab.isReconnecting.collectAsState()
-                    Tab(
-                        selected = activeTabIndex == index,
-                        onClick = { viewModel.selectTab(index) },
-                        text = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                profileColors[tab.profileId]?.let { color ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(4.dp)
-                                            .height(16.dp)
-                                            .background(color, CircleShape),
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                }
-                                if (reconnecting) {
-                                    Icon(
-                                        Icons.Filled.Autorenew,
-                                        contentDescription = "Reconnecting",
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
-                                }
-                                Text(tab.label, maxLines = 1)
-                                if (activeTabIndex == index) {
-                                    Spacer(Modifier.width(8.dp))
-                                    IconButton(
-                                        onClick = { viewModel.addTab() },
-                                        enabled = !newTabLoading,
-                                        modifier = Modifier.size(20.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Add,
-                                            contentDescription = "Clone tab",
-                                            modifier = Modifier.size(14.dp),
-                                        )
+                        tabs.forEachIndexed { index, tab ->
+                            val reconnecting by tab.isReconnecting.collectAsState()
+                            Tab(
+                                selected = activeTabIndex == index,
+                                onClick = { viewModel.selectTab(index) },
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        profileColors[tab.profileId]?.let { color ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(4.dp)
+                                                    .height(16.dp)
+                                                    .background(color, CircleShape),
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                        }
+                                        if (reconnecting) {
+                                            Icon(
+                                                Icons.Filled.Autorenew,
+                                                contentDescription = "Reconnecting",
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.error,
+                                            )
+                                        }
+                                        Text(tab.label, maxLines = 1)
+                                        if (activeTabIndex == index) {
+                                            Spacer(Modifier.width(8.dp))
+                                            IconButton(
+                                                onClick = { viewModel.addTab() },
+                                                enabled = !newTabLoading,
+                                                modifier = Modifier.size(20.dp),
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Add,
+                                                    contentDescription = "Clone tab",
+                                                    modifier = Modifier.size(14.dp),
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.closeTab(tab.sessionId) },
+                                            modifier = Modifier.size(20.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Close,
+                                                contentDescription = "Close tab",
+                                                modifier = Modifier.size(14.dp),
+                                            )
+                                        }
                                     }
+                                },
+                            )
+                        }
+                    } // PrimaryScrollableTabRow
+                    if (showCopyOutputButton) {
+                        IconButton(
+                            onClick = {
+                                val output = viewModel.copyLastCommandOutput()
+                                if (output != null) {
+                                    val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clip.setPrimaryClip(ClipData.newPlainText("command output", output))
+                                    android.widget.Toast.makeText(context, "Copied output (${output.length} chars)", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    android.widget.Toast.makeText(context, "No command output found (needs shell integration)", android.widget.Toast.LENGTH_SHORT).show()
                                 }
-                                IconButton(
-                                    onClick = { viewModel.closeTab(tab.sessionId) },
-                                    modifier = Modifier.size(20.dp),
-                                ) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        contentDescription = "Close tab",
-                                        modifier = Modifier.size(14.dp),
-                                    )
-                                }
-                            }
-                        },
-                    )
-                }
-            } // PrimaryScrollableTabRow
-                if (showCopyOutputButton) {
-                    IconButton(
-                        onClick = {
-                            val output = viewModel.copyLastCommandOutput()
-                            if (output != null) {
-                                val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clip.setPrimaryClip(ClipData.newPlainText("command output", output))
-                                android.widget.Toast.makeText(context, "Copied output (${output.length} chars)", android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                android.widget.Toast.makeText(context, "No command output found (needs shell integration)", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            Icons.Filled.ContentCopy,
-                            contentDescription = "Copy last output",
-                            modifier = Modifier.size(18.dp),
-                        )
+                            },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.ContentCopy,
+                                contentDescription = "Copy last output",
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
-                }
-                if (showSearchButton) {
-                    IconButton(
-                        onClick = { viewModel.sendSearchKeys() },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = "Search",
-                            modifier = Modifier.size(18.dp),
-                        )
+                    if (showSearchButton) {
+                        IconButton(
+                            onClick = { viewModel.sendSearchKeys() },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = "Search",
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
-                }
-            } // Row
+                } // Row
+            }
 
             // Terminal area
             val activeTab = tabs.getOrNull(activeTabIndex)
