@@ -1,10 +1,13 @@
 package sh.haven.app.navigation
 
+import android.content.res.Configuration
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -14,6 +17,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
@@ -30,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import sh.haven.core.data.preferences.UserPreferencesRepository
@@ -97,34 +103,14 @@ fun HavenNavHost(
     // Disable pager swipe when VNC/RDP is connected (pinch-to-zoom conflicts)
     var desktopConnected by remember { mutableStateOf(false) }
 
-    Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.exclude(WindowInsets.ime),
-        bottomBar = {
-            if (!desktopFullscreen) {
-                NavigationBar {
-                    screens.forEachIndexed { index, screen ->
-                        NavigationBarItem(
-                            icon = { Icon(screen.icon, contentDescription = screen.label) },
-                            label = { Text(screen.label) },
-                            selected = pagerState.currentPage == index,
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(index)
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    ) { innerPadding ->
+    val useSideNavigation =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val pagerContent: @Composable (Modifier) -> Unit = { modifier ->
         HorizontalPager(
             state = pagerState,
             userScrollEnabled = !desktopFullscreen && !desktopConnected,
-            modifier = Modifier
-                .padding(innerPadding)
-                .consumeWindowInsets(innerPadding)
-                .imePadding(),
+            modifier = modifier,
         ) { page ->
             when (screens[page]) {
                 Screen.Connections -> ConnectionsScreen(
@@ -262,6 +248,65 @@ fun HavenNavHost(
                 Screen.Keys -> KeysScreen()
                 Screen.Settings -> SettingsScreen()
             }
+        }
+    }
+
+    Scaffold(
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.exclude(WindowInsets.ime),
+        bottomBar = {
+            if (!desktopFullscreen && !useSideNavigation) {
+                NavigationBar {
+                    screens.forEachIndexed { index, screen ->
+                        NavigationBarItem(
+                            icon = { Icon(screen.icon, contentDescription = screen.label) },
+                            label = { Text(screen.label) },
+                            selected = pagerState.currentPage == index,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(index)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        if (useSideNavigation) {
+            Row(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
+                    .imePadding(),
+            ) {
+                if (!desktopFullscreen) {
+                    NavigationRail(
+                        modifier = Modifier.fillMaxHeight(),
+                    ) {
+                        screens.forEachIndexed { index, screen ->
+                            NavigationRailItem(
+                                icon = { Icon(screen.icon, contentDescription = screen.label) },
+                                label = { Text(screen.label) },
+                                alwaysShowLabel = false,
+                                selected = pagerState.currentPage == index,
+                                onClick = {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(index)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+                pagerContent(Modifier.weight(1f))
+            }
+        } else {
+            pagerContent(
+                Modifier
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
+                    .imePadding(),
+            )
         }
     }
 }
