@@ -662,7 +662,7 @@ fun TerminalScreen(
                                 tonalElevation = 2.dp,
                                 shape = MaterialTheme.shapes.small,
                                 modifier = Modifier
-                                    .align(Alignment.BottomStart)
+                                    .align(Alignment.TopEnd)
                                     .padding(8.dp),
                             ) {
                                 androidx.compose.material3.Checkbox(
