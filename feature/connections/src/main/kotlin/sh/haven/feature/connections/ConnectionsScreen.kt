@@ -913,8 +913,12 @@ private fun ConnectionTreeItem(
                     } else if (profile.isReticulum) {
                         Text("RNS: ${profile.destinationHash?.take(12) ?: ""}... via ${profile.reticulumHost}:${profile.reticulumPort}")
                     } else {
-                        val suffix = if (jumpHostLabel != null && indent == 0) " via $jumpHostLabel" else ""
-                        Text("${profile.username}@${profile.host}:${profile.port}$suffix")
+                        val via = when {
+                            jumpHostLabel != null && indent == 0 -> " via $jumpHostLabel"
+                            profile.proxyType != null && indent == 0 -> " via ${profile.proxyType}"
+                            else -> ""
+                        }
+                        Text("${profile.username}@${profile.host}:${profile.port}$via")
                     }
                 },
                 leadingContent = {

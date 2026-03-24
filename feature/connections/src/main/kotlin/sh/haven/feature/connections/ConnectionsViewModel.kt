@@ -50,6 +50,7 @@ import sh.haven.core.reticulum.ReticulumBridge
 import sh.haven.core.reticulum.ReticulumSessionManager
 import sh.haven.core.smb.SmbSessionManager
 import android.util.Log
+import com.jcraft.jsch.Proxy
 import java.io.File
 import javax.inject.Inject
 
@@ -775,10 +776,12 @@ class ConnectionsViewModel @Inject constructor(
                         sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
                     )
 
-                    // Create proxy through jump host if applicable
-                    val proxy = jumpSessionId?.let { jid ->
-                        sshSessionManager.createProxyJump(jid)
+                    // Create proxy — jump host takes priority, then SOCKS/HTTP proxy
+                    val proxy = if (jumpSessionId != null) {
+                        sshSessionManager.createProxyJump(jumpSessionId)
                             ?: throw Exception("Jump host session not usable for tunneling")
+                    } else {
+                        createNetworkProxy(profile)
                     }
                     Log.d(TAG, "Connecting to ${config.host}:${config.port} (proxy=${proxy != null})")
                     val hostKeyEntry = client.connect(config, proxy = proxy)
@@ -956,12 +959,14 @@ class ConnectionsViewModel @Inject constructor(
 
                     val sshClient = SshClient()
 
-                    // Jump host support
+                    // Jump host takes priority, then SOCKS/HTTP proxy
                     val jumpProfileId = profile.jumpProfileId
                     val proxy = if (jumpProfileId != null) {
                         val (jid, _) = connectJumpHost(jumpProfileId, password)
                         sshSessionManager.createProxyJump(jid)
-                    } else null
+                    } else {
+                        createNetworkProxy(profile)
+                    }
 
                     val hostKeyEntry = sshClient.connect(config, proxy = proxy)
 
@@ -1077,12 +1082,14 @@ class ConnectionsViewModel @Inject constructor(
 
                     val sshClient = SshClient()
 
-                    // Jump host support
+                    // Jump host takes priority, then SOCKS/HTTP proxy
                     val jumpProfileId = profile.jumpProfileId
                     val proxy = if (jumpProfileId != null) {
                         val (jid, _) = connectJumpHost(jumpProfileId, password)
                         sshSessionManager.createProxyJump(jid)
-                    } else null
+                    } else {
+                        createNetworkProxy(profile)
+                    }
 
                     val hostKeyEntry = sshClient.connect(config, proxy = proxy)
 
@@ -1370,11 +1377,18 @@ class ConnectionsViewModel @Inject constructor(
         sshSessionManager.removeSession(sel.sessionId)
     }
 
+    private fun createNetworkProxy(profile: ConnectionProfile): Proxy? {
+        val proxyHost = profile.proxyHost ?: return null
+        return when (profile.proxyType) {
+            "SOCKS5" -> com.jcraft.jsch.ProxySOCKS5(proxyHost, profile.proxyPort)
+            "SOCKS4" -> com.jcraft.jsch.ProxySOCKS4(proxyHost, profile.proxyPort)
+            "HTTP" -> com.jcraft.jsch.ProxyHTTP(proxyHost, profile.proxyPort)
+            else -> null
+        }
+    }
+
     /**
      * Connect to a jump host profile, reusing an existing connected session if available.
-     * Returns the sessionId of the connected jump host session.
-     */
-    /**
      * Returns Pair(sessionId, reused) — reused=true if an existing session was used.
      */
     private suspend fun connectJumpHost(jumpProfileId: String, password: String): Pair<String, Boolean> {

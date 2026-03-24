@@ -300,6 +300,9 @@ class SshClient : Closeable {
             // Already an IP literal — skip resolution
             if (hostname.matches(Regex("""\d{1,3}(\.\d{1,3}){3}"""))) return hostname
 
+            // .onion addresses must not be resolved locally — they require a SOCKS proxy
+            if (hostname.endsWith(".onion")) return hostname
+
             val ip = if (hostname.endsWith(".local") || hostname.endsWith(".local.")) {
                 resolveMdns(hostname) ?: resolveSystem(hostname)
             } else {

@@ -43,6 +43,9 @@ data class ConnectionProfile(
     val smbPassword: String? = null,
     val smbSshForward: Boolean = false,
     val smbSshProfileId: String? = null,
+    val proxyType: String? = null,       // "SOCKS5", "SOCKS4", "HTTP", or null (none)
+    val proxyHost: String? = null,
+    val proxyPort: Int = 1080,
 ) {
     enum class AuthType {
         PASSWORD,

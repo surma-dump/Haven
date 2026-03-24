@@ -109,6 +109,9 @@ fun ConnectionEditDialog(
     var vncPassword by rememberSaveable { mutableStateOf(existing?.vncPassword ?: "") }
     var destinationHash by rememberSaveable { mutableStateOf(existing?.destinationHash ?: "") }
     var jumpProfileId by rememberSaveable { mutableStateOf(existing?.jumpProfileId) }
+    var proxyType by rememberSaveable { mutableStateOf(existing?.proxyType) }
+    var proxyHost by rememberSaveable { mutableStateOf(existing?.proxyHost ?: "") }
+    var proxyPort by rememberSaveable { mutableStateOf(existing?.proxyPort?.toString() ?: "1080") }
     var keyId by rememberSaveable { mutableStateOf(existing?.keyId) }
     var sshOptions by rememberSaveable { mutableStateOf(existing?.sshOptions ?: "") }
     var selectedSessionManager by rememberSaveable { mutableStateOf(existing?.sessionManager) }
@@ -820,6 +823,114 @@ fun ConnectionEditDialog(
                         }
                     }
 
+                    // Proxy configuration
+                    Spacer(Modifier.height(8.dp))
+                    var proxyExpanded by remember { mutableStateOf(false) }
+                    val proxyOptions = listOf(
+                        null to "None (direct)",
+                        "SOCKS5" to "SOCKS5",
+                        "SOCKS4" to "SOCKS4",
+                        "HTTP" to "HTTP",
+                    )
+                    ExposedDropdownMenuBox(
+                        expanded = proxyExpanded,
+                        onExpandedChange = { proxyExpanded = it },
+                    ) {
+                        OutlinedTextField(
+                            value = proxyOptions.firstOrNull { it.first == proxyType }?.second ?: "None (direct)",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Proxy") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = proxyExpanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = proxyExpanded,
+                            onDismissRequest = { proxyExpanded = false },
+                        ) {
+                            proxyOptions.forEach { (value, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = {
+                                        proxyType = value
+                                        if (value == null) {
+                                            proxyHost = ""
+                                        } else if (value == "HTTP" && proxyPort == "1080") {
+                                            proxyPort = "8080"
+                                        } else if (value != "HTTP" && proxyPort == "8080") {
+                                            proxyPort = "1080"
+                                        }
+                                        proxyExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    if (proxyType != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = proxyHost,
+                                onValueChange = { proxyHost = it },
+                                label = { Text("Proxy Host") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = proxyPort,
+                                onValueChange = { proxyPort = it.filter { c -> c.isDigit() } },
+                                label = { Text("Port") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.width(80.dp),
+                            )
+                        }
+                        if (host.endsWith(".onion") && proxyType == "SOCKS5") {
+                            Text(
+                                "Tor .onion address detected — hostname will be resolved through the SOCKS5 proxy",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        } else if (host.endsWith(".onion") && proxyType != "SOCKS5") {
+                            Text(
+                                ".onion addresses require a SOCKS5 proxy (e.g. Orbot on localhost:9050)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+
+                        // Visual chain indicator for proxy
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Filled.PhoneAndroid, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(4.dp))
+                            Text("$proxyType", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(4.dp))
+                            Icon(Icons.Filled.Storage, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else if (host.endsWith(".onion")) {
+                        Text(
+                            ".onion addresses require a SOCKS5 proxy (e.g. Orbot on localhost:9050)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+
                     // Session manager
                     Spacer(Modifier.height(8.dp))
                     val sessionManagerOptions = listOf(
@@ -1135,6 +1246,9 @@ fun ConnectionEditDialog(
                             connectionType = "SSH",
                             destinationHash = null,
                             jumpProfileId = jumpProfileId,
+                            proxyType = proxyType,
+                            proxyHost = proxyHost.ifBlank { null },
+                            proxyPort = proxyPort.toIntOrNull() ?: 1080,
                             keyId = keyId,
                             sshOptions = sshOptions.ifBlank { null },
                             sessionManager = selectedSessionManager,
