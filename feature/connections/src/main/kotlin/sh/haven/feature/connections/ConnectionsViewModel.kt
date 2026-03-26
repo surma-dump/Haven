@@ -335,10 +335,12 @@ class ConnectionsViewModel @Inject constructor(
     /** SSH client + host kept alive during mosh session picker (for mosh-server exec). */
     private var moshPendingClient: SshClient? = null
     private var moshPendingHost: String? = null
+    private var moshPendingVerboseLogger: SshVerboseLogger? = null
 
     /** SSH client + host kept alive during ET session picker. */
     private var etPendingClient: SshClient? = null
     private var etPendingProfile: ConnectionProfile? = null
+    private var etPendingVerboseLogger: SshVerboseLogger? = null
 
     fun onNavigated() {
         _navigateToTerminal.value = null
@@ -1098,6 +1100,9 @@ class ConnectionsViewModel @Inject constructor(
                 label = profile.label,
             )
 
+            val verboseEnabled = preferencesRepository.verboseLoggingEnabled.first()
+            val verboseLogger = if (verboseEnabled) SshVerboseLogger() else null
+
             try {
                 // Phase 1: SSH bootstrap — connect, verify host key
                 val client = withContext(Dispatchers.IO) {
@@ -1110,7 +1115,9 @@ class ConnectionsViewModel @Inject constructor(
                         sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
                     )
 
-                    val sshClient = SshClient()
+                    val sshClient = SshClient().apply {
+                        this.verboseLogger = verboseLogger
+                    }
 
                     // Jump host takes priority, then SOCKS/HTTP proxy
                     val jumpProfileId = profile.jumpProfileId
@@ -1171,6 +1178,7 @@ class ConnectionsViewModel @Inject constructor(
                     if (existingSessions.isNotEmpty()) {
                         etPendingClient = client
                         etPendingProfile = profile
+                        etPendingVerboseLogger = verboseLogger
                         _sessionSelection.value = SessionSelection(
                             sessionId = sessionId,
                             profileId = profile.id,
@@ -1185,12 +1193,14 @@ class ConnectionsViewModel @Inject constructor(
                 }
 
                 // No existing sessions — proceed directly
-                finishEtConnect(sessionId, profile, client, smgr, null)
+                finishEtConnect(sessionId, profile, client, smgr, null, verboseLogger = verboseLogger)
             } catch (e: Exception) {
                 Log.e(TAG, "connectEternalTerminal failed for ${profile.label}: ${e.message}", e)
+                connectionLogRepository.logEvent(profile.id, ConnectionLog.Status.FAILED, details = e.message, verboseLog = verboseLogger?.drain())
                 etPendingClient?.disconnect()
                 etPendingClient = null
                 etPendingProfile = null
+                etPendingVerboseLogger = null
                 etSessionManager.updateStatus(sessionId, EtSessionManager.SessionState.Status.ERROR)
                 etSessionManager.removeSession(sessionId)
                 val msg = e.message ?: ""
@@ -1221,6 +1231,9 @@ class ConnectionsViewModel @Inject constructor(
                 label = profile.label,
             )
 
+            val verboseEnabled = preferencesRepository.verboseLoggingEnabled.first()
+            val verboseLogger = if (verboseEnabled) SshVerboseLogger() else null
+
             try {
                 // Phase 1: SSH bootstrap — connect, resolve session manager, list sessions
                 val client = withContext(Dispatchers.IO) {
@@ -1233,7 +1246,9 @@ class ConnectionsViewModel @Inject constructor(
                         sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
                     )
 
-                    val sshClient = SshClient()
+                    val sshClient = SshClient().apply {
+                        this.verboseLogger = verboseLogger
+                    }
 
                     // Jump host takes priority, then SOCKS/HTTP proxy
                     val jumpProfileId = profile.jumpProfileId
@@ -1295,6 +1310,7 @@ class ConnectionsViewModel @Inject constructor(
                         // Keep SSH client alive for mosh-server exec after user picks
                         moshPendingClient = client
                         moshPendingHost = profile.host
+                        moshPendingVerboseLogger = verboseLogger
                         _sessionSelection.value = SessionSelection(
                             sessionId = sessionId,
                             profileId = profile.id,
@@ -1309,12 +1325,14 @@ class ConnectionsViewModel @Inject constructor(
                 }
 
                 // No existing sessions — proceed directly
-                finishMoshConnect(sessionId, profile.id, profile.host, client, smgr, null)
+                finishMoshConnect(sessionId, profile.id, profile.host, client, smgr, null, verboseLogger = verboseLogger)
             } catch (e: Exception) {
                 Log.e(TAG, "connectMosh failed for ${profile.label}: ${e.message}", e)
+                connectionLogRepository.logEvent(profile.id, ConnectionLog.Status.FAILED, details = e.message, verboseLog = verboseLogger?.drain())
                 moshPendingClient?.disconnect()
                 moshPendingClient = null
                 moshPendingHost = null
+                moshPendingVerboseLogger = null
                 moshSessionManager.updateStatus(sessionId, MoshSessionManager.SessionState.Status.ERROR)
                 moshSessionManager.removeSession(sessionId)
                 val msg = e.message ?: ""
@@ -1353,8 +1371,10 @@ class ConnectionsViewModel @Inject constructor(
             // Mosh path: finish mosh connection with chosen session name
             val client = moshPendingClient
             val serverHost = moshPendingHost ?: ""
+            val pendingLogger = moshPendingVerboseLogger
             moshPendingClient = null
             moshPendingHost = null
+            moshPendingVerboseLogger = null
             if (client == null) {
                 _error.value = "Mosh SSH connection lost"
                 moshSessionManager.removeSession(sessionId)
@@ -1364,7 +1384,7 @@ class ConnectionsViewModel @Inject constructor(
             viewModelScope.launch {
                 _connectingProfileId.value = profileId
                 try {
-                    finishMoshConnect(sessionId, profileId, serverHost, client, sel.manager, sessionName)
+                    finishMoshConnect(sessionId, profileId, serverHost, client, sel.manager, sessionName, verboseLogger = pendingLogger)
                 } catch (e: Exception) {
                     client.disconnect()
                     moshSessionManager.updateStatus(sessionId, MoshSessionManager.SessionState.Status.ERROR)
@@ -1381,8 +1401,10 @@ class ConnectionsViewModel @Inject constructor(
             // ET path: finish ET connection with chosen session name
             val client = etPendingClient
             val profile = etPendingProfile
+            val pendingLogger = etPendingVerboseLogger
             etPendingClient = null
             etPendingProfile = null
+            etPendingVerboseLogger = null
             if (client == null || profile == null) {
                 _error.value = "ET SSH connection lost"
                 etSessionManager.removeSession(sessionId)
@@ -1392,7 +1414,7 @@ class ConnectionsViewModel @Inject constructor(
             viewModelScope.launch {
                 _connectingProfileId.value = profileId
                 try {
-                    finishEtConnect(sessionId, profile, client, sel.manager, sessionName)
+                    finishEtConnect(sessionId, profile, client, sel.manager, sessionName, verboseLogger = pendingLogger)
                 } catch (e: Exception) {
                     client.disconnect()
                     etSessionManager.updateStatus(sessionId, EtSessionManager.SessionState.Status.ERROR)
@@ -1660,6 +1682,7 @@ class ConnectionsViewModel @Inject constructor(
         manager: SessionManager,
         chosenSessionName: String?,
         silent: Boolean = false,
+        verboseLogger: SshVerboseLogger? = null,
     ) {
         val moshConnect = withContext(Dispatchers.IO) {
             val moshCmd = "mosh-server new -s -c 256 -l LANG=en_US.UTF-8"
@@ -1722,7 +1745,7 @@ class ConnectionsViewModel @Inject constructor(
                 repository.save(profile.copy(lastSessionName = effectiveSessionName))
             }
         }
-        connectionLogRepository.logEvent(profileId, ConnectionLog.Status.CONNECTED)
+        connectionLogRepository.logEvent(profileId, ConnectionLog.Status.CONNECTED, verboseLog = verboseLogger?.drain())
         startForegroundServiceIfNeeded()
         if (!silent) {
             _navigateToTerminal.value = profileId
@@ -1740,6 +1763,7 @@ class ConnectionsViewModel @Inject constructor(
         manager: SessionManager,
         chosenSessionName: String?,
         silent: Boolean = false,
+        verboseLogger: SshVerboseLogger? = null,
     ) {
         val etPort = profile.etPort
         val (etClientId, etPasskey) = withContext(Dispatchers.IO) {
@@ -1803,7 +1827,7 @@ class ConnectionsViewModel @Inject constructor(
         if (effectiveSessionName != null) {
             repository.save(profile.copy(lastSessionName = effectiveSessionName))
         }
-        connectionLogRepository.logEvent(profile.id, ConnectionLog.Status.CONNECTED)
+        connectionLogRepository.logEvent(profile.id, ConnectionLog.Status.CONNECTED, verboseLog = verboseLogger?.drain())
         startForegroundServiceIfNeeded()
         if (!silent) {
             _navigateToTerminal.value = profile.id
@@ -2340,6 +2364,8 @@ class ConnectionsViewModel @Inject constructor(
     private suspend fun connectMoshSilent(profile: ConnectionProfile) {
         val password = profile.sshPassword ?: ""
         val sessionId = moshSessionManager.registerSession(profileId = profile.id, label = profile.label)
+        val verboseEnabled = preferencesRepository.verboseLoggingEnabled.first()
+        val verboseLogger = if (verboseEnabled) SshVerboseLogger() else null
 
         try {
             val client = withContext(Dispatchers.IO) {
@@ -2351,7 +2377,9 @@ class ConnectionsViewModel @Inject constructor(
                     authMethod = authMethod,
                     sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
                 )
-                val sshClient = SshClient()
+                val sshClient = SshClient().apply {
+                    this.verboseLogger = verboseLogger
+                }
                 val jumpProfileId = profile.jumpProfileId
                 val proxy = if (jumpProfileId != null) {
                     val (jid, _) = connectJumpHost(jumpProfileId, password)
@@ -2373,9 +2401,10 @@ class ConnectionsViewModel @Inject constructor(
             }
 
             val smgr = resolveSessionManager(profile)
-            finishMoshConnect(sessionId, profile.id, profile.host, client, smgr, profile.lastSessionName, silent = true)
+            finishMoshConnect(sessionId, profile.id, profile.host, client, smgr, profile.lastSessionName, silent = true, verboseLogger = verboseLogger)
         } catch (e: Exception) {
             Log.e(TAG, "connectMoshSilent failed for ${profile.label}: ${e.message}", e)
+            connectionLogRepository.logEvent(profile.id, ConnectionLog.Status.FAILED, details = e.message, verboseLog = verboseLogger?.drain())
             moshSessionManager.updateStatus(sessionId, MoshSessionManager.SessionState.Status.ERROR)
             moshSessionManager.removeSession(sessionId)
             throw e
@@ -2385,6 +2414,8 @@ class ConnectionsViewModel @Inject constructor(
     private suspend fun connectEtSilent(profile: ConnectionProfile) {
         val password = profile.sshPassword ?: ""
         val sessionId = etSessionManager.registerSession(profileId = profile.id, label = profile.label)
+        val verboseEnabled = preferencesRepository.verboseLoggingEnabled.first()
+        val verboseLogger = if (verboseEnabled) SshVerboseLogger() else null
 
         try {
             val client = withContext(Dispatchers.IO) {
@@ -2396,7 +2427,9 @@ class ConnectionsViewModel @Inject constructor(
                     authMethod = authMethod,
                     sshOptions = ConnectionConfig.parseSshOptions(profile.sshOptions),
                 )
-                val sshClient = SshClient()
+                val sshClient = SshClient().apply {
+                    this.verboseLogger = verboseLogger
+                }
                 val jumpProfileId = profile.jumpProfileId
                 val proxy = if (jumpProfileId != null) {
                     val (jid, _) = connectJumpHost(jumpProfileId, password)
@@ -2418,9 +2451,10 @@ class ConnectionsViewModel @Inject constructor(
             }
 
             val smgr = resolveSessionManager(profile)
-            finishEtConnect(sessionId, profile, client, smgr, profile.lastSessionName, silent = true)
+            finishEtConnect(sessionId, profile, client, smgr, profile.lastSessionName, silent = true, verboseLogger = verboseLogger)
         } catch (e: Exception) {
             Log.e(TAG, "connectEtSilent failed for ${profile.label}: ${e.message}", e)
+            connectionLogRepository.logEvent(profile.id, ConnectionLog.Status.FAILED, details = e.message, verboseLog = verboseLogger?.drain())
             etSessionManager.updateStatus(sessionId, EtSessionManager.SessionState.Status.ERROR)
             etSessionManager.removeSession(sessionId)
             throw e

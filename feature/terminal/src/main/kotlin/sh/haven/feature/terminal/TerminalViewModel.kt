@@ -665,9 +665,9 @@ class TerminalViewModel @Inject constructor(
             moshOscHandler.onCwdChanged = { moshCwdFlow.value = it }
             moshOscHandler.onHyperlink = { uri -> moshHyperlinkFlow.value = uri }
 
-            // Defer initial command until first output arrives (shell ready)
+            // Defer initial command until shell prompt detected
             val moshInitialCmd = session.initialCommand
-            val moshShellReady = java.util.concurrent.atomic.AtomicBoolean(false)
+            val moshPendingSent = java.util.concurrent.atomic.AtomicBoolean(false)
             // Holder so lambda can reference session before it's assigned
             val moshSessionRef = arrayOfNulls<sh.haven.core.mosh.MoshSession>(1)
 
@@ -680,11 +680,18 @@ class TerminalViewModel @Inject constructor(
                     if (len > 0) {
                         moshWriteBuffer.append(moshOscHandler.outputBuf, 0, len)
                     }
-                    // Send session manager command once shell produces first output
-                    if (moshInitialCmd != null && moshShellReady.compareAndSet(false, true)) {
-                        viewModelScope.launch {
-                            kotlinx.coroutines.delay(100) // brief settle after first prompt
-                            moshSessionRef[0]?.sendInput((moshInitialCmd + "\n").toByteArray())
+                    // Send session manager command once shell prompt detected
+                    if (moshInitialCmd != null && !moshPendingSent.get()) {
+                        val raw = String(data, offset, length)
+                        val stripped = raw.replace(Regex("\u001b(?:\\[[^a-zA-Z]*[a-zA-Z]|][^\u0007]*\u0007)"), "").trimEnd()
+                        if (stripped.isNotEmpty()) {
+                            val last = stripped.last()
+                            if (last == '$' || last == '#' || last == '%' || last == '>') {
+                                if (moshPendingSent.compareAndSet(false, true)) {
+                                    Log.d(TAG, "Mosh: shell prompt detected ('$last'), sending session manager command")
+                                    moshSessionRef[0]?.sendInput((moshInitialCmd + "\n").toByteArray())
+                                }
+                            }
                         }
                     }
                 },
@@ -749,9 +756,9 @@ class TerminalViewModel @Inject constructor(
             etOscHandler.onCwdChanged = { etCwdFlow.value = it }
             etOscHandler.onHyperlink = { uri -> etHyperlinkFlow.value = uri }
 
-            // Defer initial command until first output arrives (shell ready)
+            // Defer initial command until shell prompt detected
             val etInitialCmd = session.initialCommand
-            val etShellReady = java.util.concurrent.atomic.AtomicBoolean(false)
+            val etPendingSent = java.util.concurrent.atomic.AtomicBoolean(false)
             val etSessionRef = arrayOfNulls<sh.haven.core.et.EtSession>(1)
 
             val etSession = etSessionManager.createTerminalSession(
@@ -763,11 +770,18 @@ class TerminalViewModel @Inject constructor(
                     if (len > 0) {
                         etWriteBuffer.append(etOscHandler.outputBuf, 0, len)
                     }
-                    // Send session manager command once shell produces first output
-                    if (etInitialCmd != null && etShellReady.compareAndSet(false, true)) {
-                        viewModelScope.launch {
-                            kotlinx.coroutines.delay(100) // brief settle after first prompt
-                            etSessionRef[0]?.sendInput((etInitialCmd + "\n").toByteArray())
+                    // Send session manager command once shell prompt detected
+                    if (etInitialCmd != null && !etPendingSent.get()) {
+                        val raw = String(data, offset, length)
+                        val stripped = raw.replace(Regex("\u001b(?:\\[[^a-zA-Z]*[a-zA-Z]|][^\u0007]*\u0007)"), "").trimEnd()
+                        if (stripped.isNotEmpty()) {
+                            val last = stripped.last()
+                            if (last == '$' || last == '#' || last == '%' || last == '>') {
+                                if (etPendingSent.compareAndSet(false, true)) {
+                                    Log.d(TAG, "ET: shell prompt detected ('$last'), sending session manager command")
+                                    etSessionRef[0]?.sendInput((etInitialCmd + "\n").toByteArray())
+                                }
+                            }
                         }
                     }
                 },

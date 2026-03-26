@@ -211,8 +211,8 @@ fun SettingsScreen(
             )
             SettingsToggleItem(
                 icon = Icons.Filled.BugReport,
-                title = "Verbose SSH logging",
-                subtitle = "Capture protocol details (key exchange, auth, ciphers). May include hostnames and usernames",
+                title = "Verbose connection logging",
+                subtitle = "Capture protocol details for SSH, Mosh, and ET connections. May include hostnames and usernames",
                 checked = verboseLoggingEnabled,
                 onCheckedChange = viewModel::setVerboseLoggingEnabled,
             )
