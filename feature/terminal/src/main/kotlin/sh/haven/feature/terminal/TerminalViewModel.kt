@@ -592,7 +592,7 @@ class TerminalViewModel @Inject constructor(
 
             val session = sshSessions[sessionId] ?: continue
             val baseLabel = session.label
-            val tabLabel = generateTabLabel(baseLabel, session.profileId, currentTabs)
+            val tabLabel = generateTabLabel(baseLabel, session.profileId, currentTabs, sessionName = session.chosenSessionName)
 
             lateinit var emulator: TerminalEmulator
             val writeBuffer = EmulatorWriteBuffer({ emulator }, createRecorderIfEnabled(sessionId))
@@ -743,7 +743,8 @@ class TerminalViewModel @Inject constructor(
             if (!moshSessionManager.isReadyForTerminal(sessionId)) continue
 
             val session = moshSessions[sessionId] ?: continue
-            val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs)
+            val moshProfile = runBlocking(Dispatchers.IO) { connectionRepository.getById(session.profileId) }
+            val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs, sessionName = moshProfile?.lastSessionName)
 
             lateinit var emulator: TerminalEmulator
             val moshWriteBuffer = EmulatorWriteBuffer({ emulator }, createRecorderIfEnabled(sessionId))
@@ -789,7 +790,6 @@ class TerminalViewModel @Inject constructor(
 
             val moshCoalescer = InputCoalescer { data -> moshSession.sendInput(data) }
             val moshScheme = terminalColorScheme.value
-            val moshProfile = runBlocking(Dispatchers.IO) { connectionRepository.getById(session.profileId) }
             emulator = TerminalEmulatorFactory.create(
                 initialRows = 24,
                 initialCols = 80,
@@ -836,7 +836,8 @@ class TerminalViewModel @Inject constructor(
             if (!etSessionManager.isReadyForTerminal(sessionId)) continue
 
             val session = etSessions[sessionId] ?: continue
-            val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs)
+            val etProfile = runBlocking(Dispatchers.IO) { connectionRepository.getById(session.profileId) }
+            val tabLabel = generateTabLabel(session.label, session.profileId, currentTabs, sessionName = etProfile?.lastSessionName)
 
             lateinit var emulator: TerminalEmulator
             val etWriteBuffer = EmulatorWriteBuffer({ emulator }, createRecorderIfEnabled(sessionId))
@@ -881,7 +882,6 @@ class TerminalViewModel @Inject constructor(
 
             val etCoalescer = InputCoalescer { data -> etSession.sendInput(data) }
             val etScheme = terminalColorScheme.value
-            val etProfile = runBlocking(Dispatchers.IO) { connectionRepository.getById(session.profileId) }
             emulator = TerminalEmulatorFactory.create(
                 initialRows = 24,
                 initialCols = 80,
@@ -1002,14 +1002,16 @@ class TerminalViewModel @Inject constructor(
     }
 
     /**
-     * Generate a tab label, appending a number suffix when multiple tabs
-     * share the same profile (e.g., "myserver", "myserver (2)").
+     * Generate a tab label using the session name when available.
+     * Falls back to connection label with numeric suffix for duplicates.
      */
     private fun generateTabLabel(
         baseLabel: String,
         profileId: String,
         existingTabs: List<TerminalTab>,
+        sessionName: String? = null,
     ): String {
+        if (!sessionName.isNullOrBlank()) return sessionName
         val sameProfileCount = existingTabs.count { it.profileId == profileId }
         return if (sameProfileCount == 0) baseLabel
         else "$baseLabel (${sameProfileCount + 1})"
