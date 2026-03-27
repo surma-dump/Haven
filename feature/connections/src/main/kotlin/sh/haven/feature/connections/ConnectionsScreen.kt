@@ -1113,17 +1113,12 @@ private fun ConnectionTreeItem(
                             tint = Color(0xFFF44336),
                             modifier = Modifier.size(12.dp),
                         )
-                        else -> {
-                            val tagColor = if (profile.colorTag in 1..PROFILE_COLORS.size)
-                                PROFILE_COLORS[profile.colorTag - 1].copy(alpha = 0.4f)
-                            else MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
-                            Icon(
-                                Icons.Filled.Circle,
-                                contentDescription = "Disconnected",
-                                tint = tagColor,
-                                modifier = Modifier.size(12.dp),
-                            )
-                        }
+                        else -> Icon(
+                            Icons.Filled.Circle,
+                            contentDescription = "Disconnected",
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(12.dp),
+                        )
                     }
                 },
                 trailingContent = if (profile.isLocal) {{
