@@ -14,6 +14,8 @@ data class SshKey(
     val publicKeyOpenSsh: String,
     val fingerprintSha256: String,
     val createdAt: Long = System.currentTimeMillis(),
+    /** True if privateKeyBytes are passphrase-encrypted. Passphrase prompted at connect time. */
+    val isEncrypted: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

@@ -1856,16 +1856,21 @@ class ConnectionsViewModel @Inject constructor(
                     Log.d(TAG, "Using FIDO2 SK key: ${key.keyType}")
                     return ConnectionConfig.AuthMethod.FidoKey(skKeyData = keyBytes)
                 }
+                // For encrypted keys, pass the original encrypted bytes + passphrase.
+                // JSch decrypts at auth time — key never stored in plaintext.
+                val passphrase = if (key.isEncrypted) password else ""
                 return ConnectionConfig.AuthMethod.PrivateKey(
-                    keyBytes = rawKeyToPem(keyBytes, key.keyType),
-                    passphrase = password,
+                    keyBytes = if (key.isEncrypted) keyBytes else rawKeyToPem(keyBytes, key.keyType),
+                    passphrase = passphrase,
                 )
             }
         }
 
-        // No explicit key but keys are available — try all keys
+        // No explicit key but keys are available — try all keys (skip encrypted keys
+        // that need a passphrase — they require explicit assignment to a connection)
         if (password.isEmpty()) {
             val keys = sshKeyRepository.getAllDecrypted()
+                .filter { !it.isEncrypted }
             if (keys.isNotEmpty()) {
                 return ConnectionConfig.AuthMethod.PrivateKeys(
                     keys = keys.map { key ->

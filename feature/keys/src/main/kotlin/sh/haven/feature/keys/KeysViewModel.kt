@@ -144,6 +144,7 @@ class KeysViewModel @Inject constructor(
                     privateKeyBytes = imported.privateKeyBytes,
                     publicKeyOpenSsh = imported.publicKeyOpenSsh,
                     fingerprintSha256 = imported.fingerprintSha256,
+                    isEncrypted = imported.isEncrypted,
                 )
                 repository.save(entity)
             } catch (e: Exception) {

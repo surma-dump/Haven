@@ -20,6 +20,7 @@ object SshKeyImporter {
         val privateKeyBytes: ByteArray,
         val publicKeyOpenSsh: String,
         val fingerprintSha256: String,
+        val isEncrypted: Boolean = false,
     )
 
     class EncryptedKeyException : Exception("Key is encrypted — passphrase required")
@@ -55,8 +56,13 @@ object SshKeyImporter {
             throw IllegalArgumentException("Unrecognised key format: ${e.message}", e)
         }
 
+        val encrypted = kpair.isEncrypted
+
         try {
-            if (kpair.isEncrypted) {
+            // Temporarily decrypt to extract public key metadata, but store
+            // the original encrypted bytes. The passphrase will be prompted
+            // at connection time — private keys never stored in plaintext.
+            if (encrypted) {
                 if (passphrase.isNullOrEmpty()) {
                     throw EncryptedKeyException()
                 }
@@ -76,28 +82,17 @@ object SshKeyImporter {
             val fpB64 = Base64.getEncoder().withoutPadding().encodeToString(digest)
             val fingerprint = "SHA256:$fpB64"
 
-            // Store decrypted key so passphrase isn't needed at connect time.
-            // For unencrypted keys, store the original bytes unchanged.
+            // Store original key bytes as-is. For encrypted keys, the passphrase
+            // is prompted at connection time and passed to JSch's addIdentity().
             // For Dropbear keys, store the converted OpenSSH bytes (JSch can't parse Dropbear).
-            val storedBytes = if (passphrase != null) {
-                try {
-                    val out = ByteArrayOutputStream()
-                    kpair.writePrivateKey(out)
-                    out.toByteArray()
-                } catch (_: UnsupportedOperationException) {
-                    // JSch can't re-serialize Ed25519 keys via writePrivateKey().
-                    // Extract prv_array + pub_array (64 bytes) via reflection.
-                    extractEd25519KeyMaterial(kpair) ?: fileBytes
-                }
-            } else {
-                keyBytes  // use converted bytes for Dropbear, original for others
-            }
+            val storedBytes = keyBytes
 
             return ImportedKey(
                 keyType = keyTypeName,
                 privateKeyBytes = storedBytes,
                 publicKeyOpenSsh = publicKeyOpenSsh,
                 fingerprintSha256 = fingerprint,
+                isEncrypted = encrypted,
             )
         } finally {
             kpair.dispose()
