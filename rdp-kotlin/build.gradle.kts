@@ -50,6 +50,16 @@ val buildRdpNative by tasks.registering(Exec::class) {
     outputs.dir(jniDir)
 
     workingDir = rustDir
+
+    // Detect NDK from ANDROID_NDK_HOME or ANDROID_SDK_ROOT
+    val ndkHome = System.getenv("ANDROID_NDK_HOME")
+        ?: System.getenv("ANDROID_SDK_ROOT")?.let { sdk ->
+            file("$sdk/ndk").listFiles()?.maxByOrNull { it.name }?.absolutePath
+        }
+    if (ndkHome != null) {
+        environment("ANDROID_NDK_HOME", ndkHome)
+    }
+
     commandLine("cargo", "ndk",
         "-o", jniDir.absolutePath,
         "-t", "arm64-v8a",
