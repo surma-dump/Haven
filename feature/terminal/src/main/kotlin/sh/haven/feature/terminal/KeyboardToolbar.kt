@@ -54,6 +54,38 @@ import sh.haven.core.data.preferences.ToolbarItem
 import sh.haven.core.data.preferences.ToolbarKey
 import kotlinx.coroutines.delay
 import sh.haven.core.data.preferences.ToolbarLayout
+import android.view.HapticFeedbackConstants
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import sh.haven.core.data.preferences.MACRO_PRESETS
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 
 // VT100/xterm escape sequences for special keys
 private const val ESC = "\u001b"
@@ -104,6 +136,7 @@ data class ToolbarCallbacks(
     val onShiftUsed: () -> Unit,
     val bracketPasteMode: Boolean = false,
     val clipboardManager: ClipboardManager? = null,
+    val onEnterReorderMode: () -> Unit = {},
 )
 
 val LocalToolbarCallbacks = compositionLocalOf<ToolbarCallbacks> {
@@ -129,6 +162,10 @@ fun KeyboardToolbar(
     selectionActive: Boolean = false,
     hyperlinkUri: String? = null,
     onPaste: (String) -> Unit = {},
+    reorderMode: Boolean = false,
+    onReorderModeChanged: (Boolean) -> Unit = {},
+    onToolbarLayoutChanged: (ToolbarLayout) -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var shiftActive by remember { mutableStateOf(false) }
@@ -148,14 +185,23 @@ fun KeyboardToolbar(
         onShiftUsed = { shiftActive = false },
         bracketPasteMode = bracketPasteMode,
         clipboardManager = clipboardManager,
+        onEnterReorderMode = { onReorderModeChanged(true) },
     )
 
     CompositionLocalProvider(LocalToolbarCallbacks provides callbacks) {
         Surface(
-            tonalElevation = 2.dp,
+            tonalElevation = if (reorderMode) 4.dp else 2.dp,
             modifier = modifier,
         ) {
-            if (selectionActive && selectionController != null) {
+            if (reorderMode) {
+                ReorderToolbarContent(
+                    layout = layout,
+                    onSave = onToolbarLayoutChanged,
+                    onDone = { onReorderModeChanged(false) },
+                    onOpenSettings = onOpenSettings,
+                    showVncIcon = onVncTap != null,
+                )
+            } else if (selectionActive && selectionController != null) {
                 Column {
                     if (layout.rows.size >= 2) {
                         ToolbarRow(
@@ -334,6 +380,9 @@ private fun AlignedToolbarContent(
                 }
             }
         }
+        Column(modifier = Modifier.align(Alignment.Bottom)) {
+            ReorderEditButton()
+        }
     }
 }
 
@@ -486,6 +535,7 @@ private fun ToolbarRow(
                 }
             }
         }
+        ReorderEditButton()
     }
 }
 
@@ -501,16 +551,30 @@ private fun BuiltInKey(
 ) {
     val cb = LocalToolbarCallbacks.current
     when (key) {
+        @OptIn(ExperimentalFoundationApi::class)
         ToolbarKey.KEYBOARD -> {
-            ToolbarIconButton(Icons.Filled.Keyboard, "Toggle keyboard") {
-                val window = (view.context as? Activity)?.window ?: return@ToolbarIconButton
-                val controller = WindowCompat.getInsetsController(window, view)
-                if (imeVisible) {
-                    controller.hide(WindowInsetsCompat.Type.ime())
-                } else {
-                    focusRequester.requestFocus()
-                    controller.show(WindowInsetsCompat.Type.ime())
-                }
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .combinedClickable(
+                        onClick = {
+                            val window = (view.context as? Activity)?.window ?: return@combinedClickable
+                            val controller = WindowCompat.getInsetsController(window, view)
+                            if (imeVisible) {
+                                controller.hide(WindowInsetsCompat.Type.ime())
+                            } else {
+                                focusRequester.requestFocus()
+                                controller.show(WindowInsetsCompat.Type.ime())
+                            }
+                        },
+                        onLongClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            cb.onEnterReorderMode()
+                        },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Keyboard, contentDescription = "Toggle keyboard", modifier = Modifier.size(18.dp))
             }
         }
         ToolbarKey.ESC_KEY -> ToolbarTextButton("Esc") { cb.onSendBytes(KEY_ESC) }
@@ -757,6 +821,28 @@ private fun SymbolButton(label: String, onClick: () -> Unit) {
     }
 }
 
+/** Edit button at the end of the toolbar — tapping enters reorder mode. */
+@Composable
+private fun ReorderEditButton() {
+    val cb = LocalToolbarCallbacks.current
+    FilledTonalButton(
+        onClick = { cb.onEnterReorderMode() },
+        modifier = Modifier
+            .padding(horizontal = 2.dp)
+            .height(32.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Icon(
+            Icons.Filled.Edit,
+            contentDescription = "Reorder toolbar keys",
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
 @Composable
 private fun ToolbarIconButton(icon: ImageVector, description: String, onClick: () -> Unit) {
     IconButton(
@@ -765,4 +851,867 @@ private fun ToolbarIconButton(icon: ImageVector, description: String, onClick: (
     ) {
         Icon(icon, contentDescription = description, modifier = Modifier.size(18.dp))
     }
+}
+
+// --- Toolbar reorder mode ---
+
+/** Return the index range of contiguous nav keys in a row, or null if none. */
+private fun navBounds(row: List<ToolbarItem>): IntRange? {
+    val first = row.indexOfFirst { it is ToolbarItem.BuiltIn && it.key in NAV_KEYS }
+    if (first == -1) return null
+    val last = row.indexOfLast { it is ToolbarItem.BuiltIn && it.key in NAV_KEYS }
+    return first..last
+}
+
+@Composable
+private fun ReorderToolbarContent(
+    layout: ToolbarLayout,
+    onSave: (ToolbarLayout) -> Unit,
+    onDone: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    showVncIcon: Boolean = false,
+) {
+    val rows = remember(layout) {
+        layout.rows.map { it.toMutableStateList() }
+    }
+
+    fun saveAndExit() {
+        onSave(ToolbarLayout(rows.map { it.toList() }))
+        onDone()
+    }
+
+    BackHandler { saveAndExit() }
+
+    var showAddKeyDialog by remember { mutableStateOf(false) }
+
+    if (showAddKeyDialog) {
+        AddCustomKeyDialog(
+            onDismiss = { showAddKeyDialog = false },
+            onSave = { customKey ->
+                showAddKeyDialog = false
+                // Add to row 2 if available, else row 1 (at the end)
+                val targetRow = rows.getOrElse(1) { rows[0] }
+                targetRow.add(customKey)
+            },
+        )
+    }
+
+    val row1 = rows.getOrNull(0) ?: return
+    val row2 = rows.getOrNull(1)
+    val nav1 = navBounds(row1)
+    val nav2 = if (row2 != null) navBounds(row2) else null
+
+    // If no nav keys or single row, fall back to flat rows
+    if (nav1 == null && nav2 == null || row2 == null) {
+        Column {
+            rows.forEachIndexed { i, items ->
+                DraggableSegment(
+                    items = items,
+                    range = 0 until items.size,
+                    showDoneButton = i == 0,
+                    onDone = ::saveAndExit,
+                )
+            }
+        }
+        return
+    }
+
+    // Aligned three-column layout: [left keys] [nav block] [right keys]
+    Row(
+        modifier = Modifier
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp),
+    ) {
+        // Helper: transfer an item across the nav block
+        fun transferRight(row: MutableList<ToolbarItem>, fromIndex: Int) {
+            val item = row.removeAt(fromIndex)
+            val insertAt = navBounds(row)?.let { it.last + 1 } ?: row.size
+            row.add(insertAt, item)
+        }
+        fun transferLeft(row: MutableList<ToolbarItem>, fromIndex: Int) {
+            val item = row.removeAt(fromIndex)
+            val insertAt = navBounds(row)?.first ?: 0
+            row.add(insertAt, item)
+        }
+
+        /** Move item from one row to the same segment in the other row. */
+        fun transferBetweenRows(
+            sourceRow: MutableList<ToolbarItem>,
+            targetRow: MutableList<ToolbarItem>,
+            fromIndex: Int,
+            isLeftSegment: Boolean,
+        ) {
+            val item = sourceRow.removeAt(fromIndex)
+            val targetNav = navBounds(targetRow)
+            val insertAt = if (isLeftSegment) {
+                targetNav?.first ?: targetRow.size
+            } else {
+                targetRow.size
+            }
+            targetRow.add(insertAt, item)
+        }
+
+        // Left column — IntrinsicSize.Max aligns both rows
+        Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+            DraggableSegment(
+                items = row1,
+                range = 0 until (nav1?.first ?: row1.size),
+                showDoneButton = true,
+                onDone = ::saveAndExit,
+                onTransferRight = if (nav1 != null) { idx -> transferRight(row1, idx) } else null,
+                onTransferToOtherRow = if (row2 != null) { idx ->
+                    transferBetweenRows(row1, row2, idx, isLeftSegment = true)
+                } else null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (row2 != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (showVncIcon) {
+                        Icon(
+                            Icons.Filled.DesktopWindows,
+                            contentDescription = "VNC Desktop",
+                            modifier = Modifier
+                                .size(32.dp)
+                                .padding(7.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DraggableSegment(
+                        items = row2,
+                        range = 0 until (nav2?.first ?: row2.size),
+                        onTransferRight = if (nav2 != null) { idx -> transferRight(row2, idx) } else null,
+                        onTransferToOtherRow = { idx ->
+                            transferBetweenRows(row2, row1, idx, isLeftSegment = true)
+                        },
+                    )
+                }
+            }
+        }
+
+        // Nav block — fixed-width cells matching live mode grid
+        val presentNavKeys = rows.flatten()
+            .filterIsInstance<ToolbarItem.BuiltIn>()
+            .filter { it.key in NAV_KEYS }
+            .map { it.key }
+            .toSet()
+
+        Column(
+            modifier = Modifier
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    RoundedCornerShape(12.dp),
+                ),
+        ) {
+            KeyRow {
+                for (key in NAV_GRID_TOP) {
+                    if (key in presentNavKeys) ReorderNavCell(key) else NavCell {}
+                }
+            }
+            KeyRow {
+                for (key in NAV_GRID_BOTTOM) {
+                    if (key in presentNavKeys) ReorderNavCell(key) else NavCell {}
+                }
+            }
+        }
+
+        // Right column
+        val r1RightStart = (nav1?.last?.plus(1)) ?: row1.size
+        val r2RightStart = if (row2 != null) (nav2?.last?.plus(1)) ?: row2.size else 0
+        Column(modifier = Modifier.width(IntrinsicSize.Max)) {
+            DraggableSegment(
+                items = row1,
+                range = r1RightStart until row1.size,
+                onTransferLeft = if (nav1 != null) { idx -> transferLeft(row1, idx) } else null,
+                onTransferToOtherRow = if (row2 != null) { idx ->
+                    transferBetweenRows(row1, row2, idx, isLeftSegment = false)
+                } else null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (row2 != null) {
+                DraggableSegment(
+                    items = row2,
+                    range = r2RightStart until row2.size,
+                    onTransferLeft = if (nav2 != null) { idx -> transferLeft(row2, idx) } else null,
+                    onTransferToOtherRow = { idx ->
+                        transferBetweenRows(row2, row1, idx, isLeftSegment = false)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        // Action buttons: add custom key + open full settings
+        Column(
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .padding(start = 4.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+        ) {
+            FilledTonalButton(
+                onClick = { showAddKeyDialog = true },
+                modifier = Modifier.height(32.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Add custom key",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            FilledTonalButton(
+                onClick = { saveAndExit(); onOpenSettings() },
+                modifier = Modifier.height(32.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                ),
+            ) {
+                Icon(
+                    Icons.Filled.Edit,
+                    contentDescription = "Toolbar settings",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+/** A draggable row of items from a sub-range of a row's item list. */
+@Composable
+private fun DraggableSegment(
+    items: MutableList<ToolbarItem>,
+    range: IntRange,
+    showDoneButton: Boolean = false,
+    onDone: () -> Unit = {},
+    onTransferRight: ((Int) -> Unit)? = null,
+    onTransferLeft: ((Int) -> Unit)? = null,
+    onTransferToOtherRow: ((Int) -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    if (range.isEmpty()) {
+        // Empty segment — still need height for alignment
+        Spacer(modifier.height(34.dp))
+        return
+    }
+
+    var draggedIndex by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    val itemWidths = remember { mutableStateMapOf<Int, Float>() }
+    val itemLeftEdges = remember { mutableStateMapOf<Int, Float>() }
+    val view = LocalView.current
+    val transferThreshold = 60f // pixels — ~22dp, enough to indicate intent
+
+    fun checkSwaps() {
+        if (draggedIndex < 0) return
+        val left = itemLeftEdges[draggedIndex] ?: return
+        val width = itemWidths[draggedIndex] ?: return
+        val center = left + width / 2 + dragOffset
+        if (draggedIndex < range.last) {
+            val nL = itemLeftEdges[draggedIndex + 1]
+            val nW = itemWidths[draggedIndex + 1]
+            if (nL != null && nW != null && center > nL + nW / 2) {
+                val from = draggedIndex
+                items.add(from + 1, items.removeAt(from))
+                draggedIndex = from + 1
+                dragOffset = 0f
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        }
+        if (draggedIndex > range.first) {
+            val pL = itemLeftEdges[draggedIndex - 1]
+            val pW = itemWidths[draggedIndex - 1]
+            if (pL != null && pW != null && center < pL + pW / 2) {
+                val from = draggedIndex
+                items.add(from - 1, items.removeAt(from))
+                draggedIndex = from - 1
+                dragOffset = 0f
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        }
+        // Cross-nav transfer: drag past segment boundary
+        if (onTransferRight != null && draggedIndex == range.last &&
+            dragOffset > transferThreshold
+        ) {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onTransferRight(draggedIndex)
+            draggedIndex = -1
+            dragOffset = 0f
+            dragOffsetY = 0f
+        }
+        if (onTransferLeft != null && draggedIndex == range.first &&
+            dragOffset < -transferThreshold
+        ) {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onTransferLeft(draggedIndex)
+            draggedIndex = -1
+            dragOffset = 0f
+            dragOffsetY = 0f
+        }
+        // Cross-row transfer: drag up or down
+        if (onTransferToOtherRow != null &&
+            (dragOffsetY > transferThreshold || dragOffsetY < -transferThreshold)
+        ) {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            onTransferToOtherRow(draggedIndex)
+            draggedIndex = -1
+            dragOffset = 0f
+            dragOffsetY = 0f
+        }
+    }
+
+    Row(
+        modifier = modifier
+            .padding(vertical = 1.dp)
+            .pointerInput(range) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        val hit = range.find { idx ->
+                            val l = itemLeftEdges[idx] ?: return@find false
+                            val w = itemWidths[idx] ?: return@find false
+                            offset.x >= l && offset.x < l + w
+                        } ?: -1
+                        if (hit >= 0) {
+                            val item = items[hit]
+                            val skip = item is ToolbarItem.BuiltIn &&
+                                item.key == ToolbarKey.KEYBOARD
+                            if (!skip) {
+                                draggedIndex = hit
+                                dragOffset = 0f
+                                view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            }
+                        }
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        if (draggedIndex >= 0) {
+                            dragOffset += amount.x
+                            dragOffsetY += amount.y
+                            checkSwaps()
+                        }
+                    },
+                    onDragEnd = { draggedIndex = -1; dragOffset = 0f; dragOffsetY = 0f },
+                    onDragCancel = { draggedIndex = -1; dragOffset = 0f; dragOffsetY = 0f },
+                )
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (idx in range) {
+            val item = items[idx]
+            val isDoneBtn = showDoneButton &&
+                item is ToolbarItem.BuiltIn && item.key == ToolbarKey.KEYBOARD
+            if (isDoneBtn) {
+                IconButton(
+                    onClick = onDone,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .onGloballyPositioned { c ->
+                            itemWidths[idx] = c.size.width.toFloat()
+                            itemLeftEdges[idx] = c.positionInParent().x
+                        },
+                ) {
+                    Icon(
+                        Icons.Filled.Check,
+                        contentDescription = "Done reordering",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .onGloballyPositioned { c ->
+                            itemWidths[idx] = c.size.width.toFloat()
+                            itemLeftEdges[idx] = c.positionInParent().x
+                        }
+                        .then(
+                            if (idx == draggedIndex) {
+                                Modifier
+                                    .offset { IntOffset(dragOffset.roundToInt(), 0) }
+                                    .zIndex(1f)
+                                    .graphicsLayer {
+                                        scaleX = 1.05f
+                                        scaleY = 1.05f
+                                    }
+                            } else Modifier
+                        ),
+                ) {
+                    ReorderModeKey(item)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReorderableToolbarRow(
+    items: MutableList<ToolbarItem>,
+    showDoneButton: Boolean = false,
+    onDone: () -> Unit = {},
+    navGroupShape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(12.dp),
+) {
+    var dragGroupStart by remember { mutableIntStateOf(-1) }
+    var dragGroupEnd by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val itemWidths = remember { mutableStateMapOf<Int, Float>() }
+    val itemLeftEdges = remember { mutableStateMapOf<Int, Float>() }
+    val view = LocalView.current
+    val scrollState = rememberScrollState()
+    var autoScrollSpeed by remember { mutableFloatStateOf(0f) }
+    var viewportWidth by remember { mutableIntStateOf(0) }
+
+    /** Find the contiguous run of nav keys containing [index], or index..index for non-nav. */
+    fun navGroupAt(index: Int): IntRange {
+        val item = items[index]
+        if (item !is ToolbarItem.BuiltIn || item.key !in NAV_KEYS) return index..index
+        var start = index
+        while (start > 0) {
+            val prev = items[start - 1]
+            if (prev is ToolbarItem.BuiltIn && prev.key in NAV_KEYS) start-- else break
+        }
+        var end = index
+        while (end < items.lastIndex) {
+            val next = items[end + 1]
+            if (next is ToolbarItem.BuiltIn && next.key in NAV_KEYS) end++ else break
+        }
+        return start..end
+    }
+
+    fun checkSwaps() {
+        if (dragGroupStart < 0) return
+        val groupLeft = itemLeftEdges[dragGroupStart] ?: return
+        val groupWidth = itemWidths[dragGroupStart] ?: return
+        val groupCenter = groupLeft + groupWidth / 2 + dragOffset
+        // Swap with right neighbor (move it before the group)
+        val rightIdx = dragGroupEnd + 1
+        if (rightIdx <= items.lastIndex) {
+            val nextLeft = itemLeftEdges[rightIdx]
+            val nextWidth = itemWidths[rightIdx]
+            if (nextLeft != null && nextWidth != null &&
+                groupCenter > nextLeft + nextWidth / 2
+            ) {
+                val removed = items.removeAt(rightIdx)
+                items.add(dragGroupStart, removed)
+                dragGroupStart++
+                dragGroupEnd++
+                dragOffset = 0f
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        }
+        // Swap with left neighbor (move it after the group)
+        val leftIdx = dragGroupStart - 1
+        if (leftIdx >= 0) {
+            val prevLeft = itemLeftEdges[leftIdx]
+            val prevWidth = itemWidths[leftIdx]
+            if (prevLeft != null && prevWidth != null &&
+                groupCenter < prevLeft + prevWidth / 2
+            ) {
+                val removed = items.removeAt(leftIdx)
+                items.add(dragGroupEnd, removed)
+                dragGroupStart--
+                dragGroupEnd--
+                dragOffset = 0f
+                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+            }
+        }
+    }
+
+    // Auto-scroll when dragging near viewport edges
+    LaunchedEffect(autoScrollSpeed) {
+        if (autoScrollSpeed != 0f) {
+            while (true) {
+                val scrolled = scrollState.scrollBy(autoScrollSpeed)
+                dragOffset += scrolled
+                checkSwaps()
+                delay(16)
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier.onGloballyPositioned { viewportWidth = it.size.width },
+    ) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(scrollState)
+                .padding(horizontal = 4.dp, vertical = 1.dp)
+                .pointerInput(items.size) {
+                    val edgeThreshold = 40.dp.toPx()
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { offset ->
+                            val hitIndex = (0 until items.size).find { idx ->
+                                val left = itemLeftEdges[idx] ?: return@find false
+                                val width = itemWidths[idx] ?: return@find false
+                                offset.x >= left && offset.x < left + width
+                            } ?: -1
+                            if (hitIndex >= 0) {
+                                val item = items[hitIndex]
+                                val isKeyboard = item is ToolbarItem.BuiltIn &&
+                                    item.key == ToolbarKey.KEYBOARD
+                                if (!isKeyboard) {
+                                    val group = navGroupAt(hitIndex)
+                                    dragGroupStart = group.first
+                                    dragGroupEnd = group.last
+                                    dragOffset = 0f
+                                    view.performHapticFeedback(
+                                        HapticFeedbackConstants.LONG_PRESS,
+                                    )
+                                }
+                            }
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            if (dragGroupStart >= 0) {
+                                dragOffset += dragAmount.x
+                                checkSwaps()
+                                // Auto-scroll near viewport edges
+                                val fingerInViewport =
+                                    change.position.x - scrollState.value
+                                autoScrollSpeed = when {
+                                    fingerInViewport < edgeThreshold &&
+                                        scrollState.value > 0 -> -8f
+                                    viewportWidth > 0 &&
+                                        fingerInViewport > viewportWidth - edgeThreshold &&
+                                        scrollState.value < scrollState.maxValue -> 8f
+                                    else -> 0f
+                                }
+                            }
+                        },
+                        onDragEnd = {
+                            dragGroupStart = -1
+                            dragGroupEnd = -1
+                            dragOffset = 0f
+                            autoScrollSpeed = 0f
+                        },
+                        onDragCancel = {
+                            dragGroupStart = -1
+                            dragGroupEnd = -1
+                            dragOffset = 0f
+                            autoScrollSpeed = 0f
+                        },
+                    )
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            var i = 0
+            while (i < items.size) {
+                val item = items[i]
+                val isDoneButton = showDoneButton &&
+                    item is ToolbarItem.BuiltIn && item.key == ToolbarKey.KEYBOARD
+                val isNav = item is ToolbarItem.BuiltIn && item.key in NAV_KEYS
+
+                if (isDoneButton) {
+                    IconButton(
+                        onClick = onDone,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .onGloballyPositioned { coords ->
+                                itemWidths[i] = coords.size.width.toFloat()
+                                itemLeftEdges[i] = coords.positionInParent().x
+                            },
+                    ) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = "Done reordering",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    i++
+                } else if (isNav) {
+                    // Find contiguous run of nav keys
+                    var end = i
+                    while (end + 1 < items.size) {
+                        val next = items[end + 1]
+                        if (next is ToolbarItem.BuiltIn && next.key in NAV_KEYS) end++
+                        else break
+                    }
+                    val groupStart = i
+                    val isBeingDragged = groupStart in dragGroupStart..dragGroupEnd
+                    // Render nav group as a bordered unit
+                    Row(
+                        modifier = Modifier
+                            .onGloballyPositioned { coords ->
+                                itemWidths[groupStart] = coords.size.width.toFloat()
+                                itemLeftEdges[groupStart] =
+                                    coords.positionInParent().x
+                            }
+                            .then(
+                                if (isBeingDragged) {
+                                    Modifier
+                                        .offset {
+                                            IntOffset(dragOffset.roundToInt(), 0)
+                                        }
+                                        .zIndex(1f)
+                                        .graphicsLayer {
+                                            scaleX = 1.05f
+                                            scaleY = 1.05f
+                                        }
+                                } else Modifier
+                            )
+                            .border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                navGroupShape,
+                            )
+                            .padding(horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        for (j in groupStart..end) {
+                            ReorderModeNavKey(items[j])
+                        }
+                    }
+                    i = end + 1
+                } else {
+                    // Single non-nav item
+                    val idx = i
+                    Box(
+                        modifier = Modifier
+                            .onGloballyPositioned { coords ->
+                                itemWidths[idx] = coords.size.width.toFloat()
+                                itemLeftEdges[idx] = coords.positionInParent().x
+                            }
+                            .then(
+                                if (idx in dragGroupStart..dragGroupEnd) {
+                                    Modifier
+                                        .offset {
+                                            IntOffset(dragOffset.roundToInt(), 0)
+                                        }
+                                        .zIndex(1f)
+                                        .graphicsLayer {
+                                            scaleX = 1.05f
+                                            scaleY = 1.05f
+                                        }
+                                } else Modifier
+                            ),
+                    ) {
+                        ReorderModeKey(item)
+                    }
+                    i++
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReorderModeKey(item: ToolbarItem) {
+    FilledTonalButton(
+        onClick = {},
+        modifier = Modifier
+            .padding(horizontal = 1.dp)
+            .height(32.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+    ) {
+        Text(item.displayLabel, fontSize = 11.sp, lineHeight = 11.sp)
+    }
+}
+
+/** Nav cell for reorder mode — fixed 44dp width matching live mode. */
+@Composable
+private fun ReorderNavCell(key: ToolbarKey) {
+    val isArrow = key in setOf(
+        ToolbarKey.ARROW_LEFT, ToolbarKey.ARROW_UP,
+        ToolbarKey.ARROW_DOWN, ToolbarKey.ARROW_RIGHT,
+    )
+    val label = when (key) {
+        ToolbarKey.ARROW_LEFT -> "\u2190"
+        ToolbarKey.ARROW_UP -> "\u2191"
+        ToolbarKey.ARROW_DOWN -> "\u2193"
+        ToolbarKey.ARROW_RIGHT -> "\u2192"
+        else -> key.label
+    }
+    NavCell {
+        FilledTonalButton(
+            onClick = {},
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            Text(
+                label,
+                fontSize = if (isArrow) 16.sp else 11.sp,
+                lineHeight = if (isArrow) 16.sp else 11.sp,
+                fontWeight = if (isArrow) {
+                    androidx.compose.ui.text.font.FontWeight.Bold
+                } else null,
+            )
+        }
+    }
+}
+
+/** Display label for nav keys — uses arrow symbols instead of text names. */
+private fun navKeyLabel(item: ToolbarItem): String {
+    if (item !is ToolbarItem.BuiltIn) return item.displayLabel
+    return when (item.key) {
+        ToolbarKey.ARROW_LEFT -> "\u2190"
+        ToolbarKey.ARROW_UP -> "\u2191"
+        ToolbarKey.ARROW_DOWN -> "\u2193"
+        ToolbarKey.ARROW_RIGHT -> "\u2192"
+        else -> item.displayLabel
+    }
+}
+
+@Composable
+private fun ReorderModeNavKey(item: ToolbarItem) {
+    val label = navKeyLabel(item)
+    val isArrow = item is ToolbarItem.BuiltIn && item.key in setOf(
+        ToolbarKey.ARROW_LEFT, ToolbarKey.ARROW_UP,
+        ToolbarKey.ARROW_DOWN, ToolbarKey.ARROW_RIGHT,
+    )
+    FilledTonalButton(
+        onClick = {},
+        modifier = Modifier.height(32.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+    ) {
+        Text(
+            label,
+            fontSize = if (isArrow) 16.sp else 11.sp,
+            lineHeight = if (isArrow) 16.sp else 11.sp,
+            fontWeight = if (isArrow) {
+                androidx.compose.ui.text.font.FontWeight.Bold
+            } else null,
+        )
+    }
+}
+
+// --- Add custom key dialog ---
+
+private fun displaySendSequence(send: String): String {
+    if (send == "PASTE") return "Paste clipboard"
+    return send.map { ch ->
+        when {
+            ch.code < 0x20 -> "\\u${ch.code.toString(16).padStart(4, '0')}"
+            else -> ch.toString()
+        }
+    }.joinToString("")
+}
+
+private fun parseSendSequence(input: String): String {
+    val sb = StringBuilder()
+    var i = 0
+    while (i < input.length) {
+        if (i + 1 < input.length && input[i] == '\\') {
+            when (input[i + 1]) {
+                'n' -> { sb.append('\n'); i += 2 }
+                't' -> { sb.append('\t'); i += 2 }
+                'r' -> { sb.append('\r'); i += 2 }
+                '\\' -> { sb.append('\\'); i += 2 }
+                'u' -> {
+                    if (i + 5 < input.length) {
+                        val hex = input.substring(i + 2, i + 6)
+                        val code = hex.toIntOrNull(16)
+                        if (code != null) { sb.append(code.toChar()); i += 6 }
+                        else { sb.append(input[i]); i++ }
+                    } else { sb.append(input[i]); i++ }
+                }
+                else -> { sb.append(input[i]); i++ }
+            }
+        } else { sb.append(input[i]); i++ }
+    }
+    return sb.toString()
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AddCustomKeyDialog(
+    onDismiss: () -> Unit,
+    onSave: (ToolbarItem.Custom) -> Unit,
+) {
+    var label by remember { mutableStateOf("") }
+    var sendText by remember { mutableStateOf("") }
+    var presetExpanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add custom key") },
+        text = {
+            Column {
+                ExposedDropdownMenuBox(
+                    expanded = presetExpanded,
+                    onExpandedChange = { presetExpanded = it },
+                ) {
+                    OutlinedTextField(
+                        value = "Presets",
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = presetExpanded)
+                        },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodySmall,
+                    )
+                    ExposedDropdownMenu(
+                        expanded = presetExpanded,
+                        onDismissRequest = { presetExpanded = false },
+                    ) {
+                        MACRO_PRESETS.forEach { preset ->
+                            DropdownMenuItem(
+                                text = { Text(preset.description) },
+                                onClick = {
+                                    label = preset.label
+                                    sendText = displaySendSequence(preset.send)
+                                    presetExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Label") },
+                    placeholder = { Text("e.g. ^C, Paste") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = sendText,
+                    onValueChange = { sendText = it },
+                    label = { Text("Sequence") },
+                    placeholder = { Text("e.g. \\u0003") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Text(
+                    text = "Use \\u001b for Escape, \\u0003 for Ctrl+C, \\n for Enter",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val parsed = parseSendSequence(sendText)
+                    onSave(ToolbarItem.Custom(label.trim(), parsed))
+                },
+                enabled = label.isNotBlank() && sendText.isNotBlank(),
+            ) {
+                Text("Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }

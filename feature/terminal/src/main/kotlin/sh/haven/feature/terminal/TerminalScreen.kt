@@ -107,8 +107,12 @@ fun TerminalScreen(
     onNavigateToConnections: () -> Unit = {},
     onNavigateToVnc: (host: String, port: Int, password: String?, sshForward: Boolean, sshSessionId: String?) -> Unit = { _, _, _, _, _ -> },
     onSelectionActiveChanged: (Boolean) -> Unit = {},
+    onReorderModeChanged: (Boolean) -> Unit = {},
+    onToolbarLayoutChanged: (ToolbarLayout) -> Unit = {},
+    onOpenToolbarSettings: () -> Unit = {},
     viewModel: TerminalViewModel = hiltViewModel(),
 ) {
+    var reorderMode by remember { mutableStateOf(false) }
     val tabs by viewModel.tabs.collectAsState()
     val activeTabIndex by viewModel.activeTabIndex.collectAsState()
     val ctrlActive by viewModel.ctrlActive.collectAsState()
@@ -524,6 +528,13 @@ fun TerminalScreen(
                         selectionActive = selectionActive,
                         hyperlinkUri = currentHyperlinkUri,
                         onPaste = { text -> activeTab.sendInput(text.toByteArray()) },
+                        reorderMode = reorderMode,
+                        onReorderModeChanged = {
+                            reorderMode = it
+                            onReorderModeChanged(it)
+                        },
+                        onToolbarLayoutChanged = onToolbarLayoutChanged,
+                        onOpenSettings = onOpenToolbarSettings,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

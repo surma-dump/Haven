@@ -38,6 +38,7 @@ class UserPreferencesRepository @Inject constructor(
     private val verboseLoggingEnabledKey = booleanPreferencesKey("verbose_logging_enabled")
     private val mouseInputEnabledKey = booleanPreferencesKey("mouse_input_enabled")
     private val terminalRightClickKey = booleanPreferencesKey("terminal_right_click")
+    private val reorderHintShownKey = booleanPreferencesKey("reorder_hint_shown")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -117,6 +118,16 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setTerminalRightClick(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[terminalRightClickKey] = enabled
+        }
+    }
+
+    val reorderHintShown: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[reorderHintShownKey] ?: false
+    }
+
+    suspend fun setReorderHintShown() {
+        dataStore.edit { prefs ->
+            prefs[reorderHintShownKey] = true
         }
     }
 

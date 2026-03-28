@@ -96,6 +96,7 @@ import sh.haven.core.data.preferences.UserPreferencesRepository
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    openToolbarConfig: Boolean = false,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val biometricEnabled by viewModel.biometricEnabled.collectAsState()
@@ -122,6 +123,9 @@ fun SettingsScreen(
     var showColorSchemeDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
     var showToolbarConfigDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(openToolbarConfig) {
+        if (openToolbarConfig) showToolbarConfigDialog = true
+    }
     var showBackupPasswordDialog by remember { mutableStateOf<BackupAction?>(null) }
     var showLockTimeoutDialog by remember { mutableStateOf(false) }
     var showOsc133SetupDialog by remember { mutableStateOf(false) }

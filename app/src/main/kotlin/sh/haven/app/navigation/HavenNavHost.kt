@@ -104,6 +104,8 @@ fun HavenNavHost(
 
     // Disable pager swipe while terminal text selection is active
     var terminalSelectionActive by remember { mutableStateOf(false) }
+    var terminalReorderMode by remember { mutableStateOf(false) }
+    var openToolbarConfig by remember { mutableStateOf(false) }
 
     // Desktop fullscreen hides bottom nav and system bars
     var desktopFullscreen by remember { mutableStateOf(false) }
@@ -212,9 +214,21 @@ fun HavenNavHost(
                             }
                         },
                         onSelectionActiveChanged = { terminalSelectionActive = it },
+                        onReorderModeChanged = { terminalReorderMode = it },
+                        onToolbarLayoutChanged = { newLayout ->
+                            coroutineScope.launch {
+                                preferencesRepository.setToolbarLayout(newLayout)
+                            }
+                        },
+                        onOpenToolbarSettings = {
+                            openToolbarConfig = true
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(pageOf(Screen.Settings))
+                            }
+                        },
                         terminalModifier = Modifier.pagerSwipeOverride(
                             pagerState, coroutineScope,
-                            isSelectionActive = { terminalSelectionActive },
+                            isSelectionActive = { terminalSelectionActive || terminalReorderMode },
                         ),
                     )
                     LaunchedEffect(pendingTerminalProfileId) {
@@ -276,7 +290,10 @@ fun HavenNavHost(
                     }
                 }
                 Screen.Keys -> KeysScreen()
-                Screen.Settings -> SettingsScreen()
+                Screen.Settings -> {
+                    SettingsScreen(openToolbarConfig = openToolbarConfig)
+                    if (openToolbarConfig) openToolbarConfig = false
+                }
             }
         }
     }
