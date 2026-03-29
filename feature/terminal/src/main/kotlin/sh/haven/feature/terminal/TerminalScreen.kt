@@ -234,10 +234,14 @@ fun TerminalScreen(
         } else {
             // Tab row — always show when tabs exist so "+" button is accessible
             val profileColors = remember(tabs) {
-                tabs.map { it.profileId }.distinct()
-                    .withIndex().associate { (i, id) ->
-                        id to TAB_GROUP_COLORS[i % TAB_GROUP_COLORS.size]
+                tabs.associate { tab ->
+                    val color = if (tab.colorTag in 1..TAB_GROUP_COLORS.size) {
+                        TAB_GROUP_COLORS[tab.colorTag - 1]
+                    } else {
+                        null // No color assigned — use default theme
                     }
+                    tab.profileId to color
+                }
             }
             val clampedIndex = activeTabIndex.coerceIn(0, tabs.size - 1)
             val indicatorColor = profileColors[tabs.getOrNull(clampedIndex)?.profileId]

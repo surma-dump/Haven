@@ -210,6 +210,7 @@ private class InputCoalescer(private val sink: (ByteArray) -> Unit) {
 data class TerminalTab(
     val sessionId: String,
     val profileId: String,
+    val colorTag: Int = 0,
     val label: String,
     val transportType: String,
     val emulator: TerminalEmulator,
@@ -648,6 +649,7 @@ class TerminalViewModel @Inject constructor(
                 TerminalTab(
                     sessionId = sshSessionId,
                     profileId = session.profileId,
+                    colorTag = sshProfile?.colorTag ?: 0,
                     label = tabLabel,
                     transportType = "SSH",
                     emulator = emulator,
@@ -719,6 +721,7 @@ class TerminalViewModel @Inject constructor(
                 TerminalTab(
                     sessionId = session.sessionId,
                     profileId = session.profileId,
+                    colorTag = rnsProfile?.colorTag ?: 0,
                     label = tabLabel,
                     transportType = "RETICULUM",
                     emulator = emulator,
@@ -812,6 +815,7 @@ class TerminalViewModel @Inject constructor(
                 TerminalTab(
                     sessionId = session.sessionId,
                     profileId = session.profileId,
+                    colorTag = moshProfile?.colorTag ?: 0,
                     label = tabLabel,
                     transportType = "MOSH",
                     emulator = emulator,
@@ -904,6 +908,7 @@ class TerminalViewModel @Inject constructor(
                 TerminalTab(
                     sessionId = session.sessionId,
                     profileId = session.profileId,
+                    colorTag = etProfile?.colorTag ?: 0,
                     label = tabLabel,
                     transportType = "ET",
                     emulator = emulator,
@@ -975,6 +980,7 @@ class TerminalViewModel @Inject constructor(
                 TerminalTab(
                     sessionId = session.sessionId,
                     profileId = session.profileId,
+                    colorTag = localProfile?.colorTag ?: 0,
                     label = tabLabel,
                     transportType = "LOCAL",
                     emulator = emulator,
