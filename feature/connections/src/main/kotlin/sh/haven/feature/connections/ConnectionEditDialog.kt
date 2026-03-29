@@ -352,32 +352,13 @@ fun ConnectionEditDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else if (connectionType == "RCLONE") {
-                    Text(
-                        "Connect to cloud storage via rclone. " +
-                            "Supports Google Drive, Dropbox, S3, OneDrive, and 60+ providers. " +
-                            "Configure the remote in the rclone config flow after saving.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = rcloneRemoteName,
-                        onValueChange = { rcloneRemoteName = it.filter { c -> c.isLetterOrDigit() || c == '_' || c == '-' } },
-                        label = { Text("Remote Name") },
-                        placeholder = { Text("gdrive") },
-                        supportingText = { Text("Internal name for this remote (letters, digits, -, _)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(4.dp))
-
                     val providerOptions = listOf(
                         "drive" to "Google Drive",
                         "dropbox" to "Dropbox",
                         "onedrive" to "Microsoft OneDrive",
                         "s3" to "Amazon S3 / Compatible",
                         "b2" to "Backblaze B2",
-                        "sftp" to "SFTP",
+                        "sftp" to "SFTP (remote)",
                         "webdav" to "WebDAV",
                         "ftp" to "FTP",
                         "mega" to "MEGA",
@@ -410,11 +391,21 @@ fun ConnectionEditDialog(
                                     onClick = {
                                         rcloneProvider = value
                                         providerExpanded = false
+                                        // Auto-generate remote name if user hasn't set one manually
+                                        if (rcloneRemoteName.isEmpty() || rcloneRemoteName == rcloneProvider) {
+                                            rcloneRemoteName = value
+                                        }
                                     },
                                 )
                             }
                         }
                     }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Sign in via your browser when you first connect.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 } else if (connectionType == "VNC") {
                     // VNC: host, port, password
                     OutlinedTextField(
@@ -1374,7 +1365,7 @@ fun ConnectionEditDialog(
                 "VNC" -> host.isNotBlank()
                 "RDP" -> host.isNotBlank() && rdpUsername.isNotBlank() && (!rdpSshForward || rdpSshProfileId != null)
                 "SMB" -> host.isNotBlank() && smbShare.isNotBlank() && (!smbSshForward || smbSshProfileId != null)
-                "RCLONE" -> rcloneRemoteName.isNotBlank() && rcloneProvider.isNotBlank()
+                "RCLONE" -> rcloneProvider.isNotBlank()
                 else -> destinationHash.length == 32 && (localSideband || rnsHost.isNotBlank())
             }
             TextButton(
@@ -1456,7 +1447,7 @@ fun ConnectionEditDialog(
                             port = 0,
                             username = "",
                             connectionType = "RCLONE",
-                            rcloneRemoteName = rcloneRemoteName,
+                            rcloneRemoteName = rcloneRemoteName.ifBlank { rcloneProvider },
                             rcloneProvider = rcloneProvider,
                             colorTag = colorTag,
                             groupId = groupId,
