@@ -1027,6 +1027,20 @@ class TerminalViewModel @Inject constructor(
         }
     }
 
+    fun moveTab(fromIndex: Int, direction: Int) {
+        val toIndex = fromIndex + direction
+        val tabs = _tabs.value.toMutableList()
+        if (fromIndex !in tabs.indices || toIndex !in tabs.indices) return
+        tabs.add(toIndex, tabs.removeAt(fromIndex))
+        _tabs.value = tabs
+        // Keep the moved tab selected
+        if (_activeTabIndex.value == fromIndex) {
+            _activeTabIndex.value = toIndex
+        } else if (_activeTabIndex.value == toIndex) {
+            _activeTabIndex.value = fromIndex
+        }
+    }
+
     fun selectTabByProfileId(profileId: String) {
         val index = _tabs.value.indexOfFirst { it.profileId == profileId }
         if (index >= 0) {

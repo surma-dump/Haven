@@ -23,6 +23,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Close
@@ -323,6 +325,7 @@ fun TerminalScreen(
                                         .fillMaxWidth()
                                         .padding(horizontal = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     TextButton(
                                         onClick = {
@@ -333,6 +336,22 @@ fun TerminalScreen(
                                         Icon(Icons.Filled.Add, null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(4.dp))
                                         Text("Sessions")
+                                    }
+                                    Row {
+                                        IconButton(
+                                            onClick = { viewModel.moveTab(index, -1); showTabMenu = false },
+                                            enabled = index > 0,
+                                            modifier = Modifier.size(36.dp),
+                                        ) {
+                                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Move left", modifier = Modifier.size(18.dp))
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.moveTab(index, 1); showTabMenu = false },
+                                            enabled = index < tabs.size - 1,
+                                            modifier = Modifier.size(36.dp),
+                                        ) {
+                                            Icon(Icons.AutoMirrored.Filled.ArrowForward, "Move right", modifier = Modifier.size(18.dp))
+                                        }
                                     }
                                     TextButton(
                                         onClick = {
