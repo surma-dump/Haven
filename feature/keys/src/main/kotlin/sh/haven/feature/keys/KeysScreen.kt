@@ -275,6 +275,8 @@ fun KeysScreen(
                 val text = clipboard.primaryClip?.getItemAt(0)?.text?.toString()
                 if (text.isNullOrBlank()) {
                     viewModel.showError("Clipboard is empty")
+                } else if (!text.startsWith("-----") && !text.startsWith("ssh-")) {
+                    viewModel.showError("Clipboard doesn't contain a text SSH key. Binary keys (e.g. Dropbear) must be imported from file.")
                 } else {
                     viewModel.startImport(text.toByteArray())
                 }
@@ -333,7 +335,7 @@ private fun AddKeyChooser(
                 ListItem(
                     modifier = Modifier.clickable { onImport() },
                     headlineContent = { Text("Import from file") },
-                    supportingContent = { Text("PEM or OpenSSH format") },
+                    supportingContent = { Text("PEM, OpenSSH, or Dropbear format") },
                     leadingContent = {
                         Icon(Icons.Filled.FileUpload, contentDescription = null)
                     },
@@ -341,7 +343,7 @@ private fun AddKeyChooser(
                 ListItem(
                     modifier = Modifier.clickable { onPaste() },
                     headlineContent = { Text("Paste from clipboard") },
-                    supportingContent = { Text("Paste a PEM or OpenSSH private key") },
+                    supportingContent = { Text("Text keys only (PEM/OpenSSH). Use file import for binary Dropbear keys.") },
                     leadingContent = {
                         Icon(Icons.Filled.ContentPaste, contentDescription = null)
                     },
