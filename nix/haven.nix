@@ -267,8 +267,21 @@ PY
     tmp_file="$(mktemp)"
 
     ${jq}/bin/jq '
+      # Remove mutable index pages that change when new versions are published.
+      # All versioned artifacts are immutable and safe to keep.
       del(."https://maven.google.com")
       | del(."https://dl.google.com"["play-sdk/index/snapshot"])
+      | if .["https:/"] then
+          .["https:/"] |= with_entries(
+            select(
+              (.key | test("group-index$"; "x") | not)
+              and (.key | test("master-index$"; "x") | not)
+              and (.key | test("play-sdk/index"; "x") | not)
+              and (.key != "pypi")
+              and (.key | test("^chaquo\\.com/pypi-[0-9]+$"; "x") | not)
+            )
+          )
+        else . end
     ' "$deps_file" > "$tmp_file"
     mv "$tmp_file" "$deps_file"
   '';
