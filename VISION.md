@@ -2,7 +2,7 @@
 
 ## What Haven is
 
-Haven is a **mobile gateway to computing resources** — SSH, VNC, RDP, SFTP, SMB, and a local PRoot Linux, all wrapped in one app with strong credential security. The core thesis: *your phone is a thin client to any machine, including itself.*
+Haven is a **mobile gateway to computing resources** — SSH, VNC, RDP, SFTP, SMB, 60+ cloud storage providers via rclone, and a local PRoot Linux, all wrapped in one app with strong credential security. The core thesis: *your phone is a thin client to any machine and any cloud, including itself.*
 
 ## Identity
 
@@ -14,14 +14,16 @@ The GPL/privacy audience chooses Haven *because* it's open source. Every securit
 
 Three concentric circles, in priority order:
 
-1. **Terminal via VPN to workstation** — SSH, session persistence (tmux/zellij), reliable reconnect. Running Claude Code, development tools, system administration.
-2. **Remote graphical desktop** — VNC/RDP to remote machines or local PRoot Xfce.
-3. **Local PRoot development** — portable Linux environment on the phone itself.
+1. **Terminal via VPN to workstation** — SSH, session persistence (tmux/zellij), reliable reconnect with session restore. Running Claude Code, development tools, system administration.
+2. **File management across boundaries** — SFTP, SMB, and 60+ cloud providers (Google Drive, Dropbox, S3, OneDrive, etc.) in a unified browser. Cross-filesystem copy/move between any combination.
+3. **Remote graphical desktop** — VNC/RDP to remote machines or local PRoot Xfce.
+4. **Local PRoot development** — portable Linux environment on the phone itself.
 
 ## Cohesion assessment
 
 The feature set is mostly cohesive around "access any machine from your phone." Where it frays:
 
+- **Cloud storage via rclone** reinforces the "access anything from your phone" identity. The rclone Go bridge adds binary size (~90MB/ABI) but brings 60+ providers without per-provider API keys or proprietary SDKs. Cross-filesystem copy ties it all together.
 - **SMB and RDP** serve a Windows-centric user who probably isn't the GPL/privacy audience. They're maintenance weight on a small project.
 - **Reticulum** is visionary but niche — mesh networking for a handful of users.
 - **Five terminal transports** (SSH, Mosh, ET, Reticulum, Local) means every terminal feature must work across all five. The SessionManagerRegistry exists to manage this complexity.
@@ -65,7 +67,7 @@ Split panes, scrollback search, and session persistence are provided by tmux/zel
 ## What to defer
 
 - **Terminal split panes / scrollback search** — provided by session managers (tmux, zellij, screen). Reimplementing these in Haven would duplicate functionality and conflict with the session managers users already rely on.
-- **New protocols** — the current set is sufficient. Adding more spreads the maintenance budget thinner.
+- **More cloud provider-specific features** — rclone handles the abstraction. Don't build Google Drive-specific sharing or Dropbox-specific versioning. Let rclone be the backend.
 - **File editing** — building an editor inside Haven is a rabbit hole. Make PRoot's vim/nano work well and focus on file transfer.
 - **Collaboration features** — shared sessions, screen sharing. Out of scope for a single-developer GPL project.
 - **Tablet/ChromeOS optimization** — get the phone experience perfect first.
