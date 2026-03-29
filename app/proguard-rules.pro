@@ -7,13 +7,15 @@
 # Keep JSch
 -keep class com.jcraft.jsch.** { *; }
 
-# JSch optional dependencies not available on Android
+# JSch optional dependencies not available on Android (PageantConnector, etc.)
 -dontwarn org.apache.logging.log4j.**
 -dontwarn org.slf4j.**
 -dontwarn org.ietf.jgss.**
 -dontwarn org.newsclub.net.unix.**
 -dontwarn javax.naming.**
 -dontwarn com.sun.jna.**
+-dontwarn com.sun.jna.platform.win32.**
+-dontwarn com.jcraft.jsch.PageantConnector
 
 # Keep termlib classes — native JNI renderer accesses fields by name
 -keep class org.connectbot.terminal.** { *; }
