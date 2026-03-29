@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,10 +19,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.FileCopy
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
@@ -42,6 +47,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,6 +102,7 @@ fun SftpScreen(
     val message by viewModel.message.collectAsState()
     val lastDownload by viewModel.lastDownload.collectAsState()
     val uploadConflict by viewModel.uploadConflict.collectAsState()
+    val fileClipboard by viewModel.clipboard.collectAsState()
 
     LaunchedEffect(pendingSmbProfileId) {
         pendingSmbProfileId?.let { viewModel.setPendingSmbProfile(it) }
@@ -286,11 +293,17 @@ fun SftpScreen(
                             }
                         }
                     }
-                    FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
-                        Icon(
-                            if (fabExpanded) Icons.Filled.CreateNewFolder else Icons.Filled.Upload,
-                            if (fabExpanded) "Close" else "Actions",
-                        )
+                    if (fileClipboard != null) {
+                        FloatingActionButton(onClick = { viewModel.pasteFromClipboard() }) {
+                            Icon(Icons.Filled.ContentPaste, "Paste")
+                        }
+                    } else {
+                        FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
+                            Icon(
+                                if (fabExpanded) Icons.Filled.CreateNewFolder else Icons.Filled.Upload,
+                                if (fabExpanded) "Close" else "Actions",
+                            )
+                        }
                     }
                 }
             }
@@ -303,12 +316,16 @@ fun SftpScreen(
         ) {
             if (loading) {
                 val progress = transferProgress
-                if (progress != null && progress.totalBytes > 0) {
+                if (progress != null && (progress.totalBytes > 0 || progress.fileName.isNotEmpty())) {
                     Column(modifier = Modifier.fillMaxWidth()) {
-                        LinearProgressIndicator(
-                            progress = { progress.fraction },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        if (progress.totalBytes > 0) {
+                            LinearProgressIndicator(
+                                progress = { progress.fraction },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -323,11 +340,13 @@ fun SftpScreen(
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
                             )
-                            Text(
-                                "${Formatter.formatFileSize(context, progress.transferredBytes)} / ${Formatter.formatFileSize(context, progress.totalBytes)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            if (progress.totalBytes > 0) {
+                                Text(
+                                    "${Formatter.formatFileSize(context, progress.transferredBytes)} / ${Formatter.formatFileSize(context, progress.totalBytes)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 } else {
@@ -371,6 +390,34 @@ fun SftpScreen(
                     }
                 }
 
+                // Clipboard banner
+                fileClipboard?.let { cb ->
+                    Surface(tonalElevation = 2.dp) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                if (cb.isCut) Icons.Filled.ContentCut else Icons.Filled.FileCopy,
+                                null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "${cb.entries.size} item${if (cb.entries.size > 1) "s" else ""} ${if (cb.isCut) "cut" else "copied"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { viewModel.clearClipboard() }) {
+                                Text("Cancel")
+                            }
+                        }
+                    }
+                }
+
                 // File list
                 if (entries.isEmpty() && !loading) {
                     Box(
@@ -385,7 +432,24 @@ fun SftpScreen(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(entries, key = { it.path }) { entry ->
+                        // ".." parent directory entry
+                        if (currentPath != "/" && currentPath.isNotEmpty()) {
+                            item(key = "__parent__") {
+                                ListItem(
+                                    headlineContent = { Text("..") },
+                                    supportingContent = { Text("Parent directory") },
+                                    leadingContent = {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Up",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    },
+                                    modifier = Modifier.clickable { viewModel.navigateUp() },
+                                )
+                            }
+                        }
+                        itemsIndexed(entries, key = { index, entry -> "${activeProfileId}:${index}:${entry.path}" }) { _, entry ->
                             FileListItem(
                                 entry = entry,
                                 onTap = {
@@ -404,6 +468,8 @@ fun SftpScreen(
                                         snackbarHostState.showSnackbar("Path copied")
                                     }
                                 },
+                                onCopy = { viewModel.copyToClipboard(listOf(entry), isCut = false) },
+                                onCut = { viewModel.copyToClipboard(listOf(entry), isCut = true) },
                             )
                         }
                     }
@@ -480,6 +546,8 @@ private fun FileListItem(
     onDownload: () -> Unit,
     onDelete: () -> Unit,
     onCopyPath: () -> Unit,
+    onCopy: () -> Unit = {},
+    onCut: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -522,6 +590,16 @@ private fun FileListItem(
                     onClick = { showMenu = false; onDownload() },
                 )
             }
+            DropdownMenuItem(
+                text = { Text("Copy") },
+                leadingIcon = { Icon(Icons.Filled.FileCopy, null) },
+                onClick = { showMenu = false; onCopy() },
+            )
+            DropdownMenuItem(
+                text = { Text("Cut") },
+                leadingIcon = { Icon(Icons.Filled.ContentCut, null) },
+                onClick = { showMenu = false; onCut() },
+            )
             DropdownMenuItem(
                 text = { Text("Copy path") },
                 leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },

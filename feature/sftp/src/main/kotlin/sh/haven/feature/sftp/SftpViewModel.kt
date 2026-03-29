@@ -44,6 +44,21 @@ data class SftpEntry(
     val permissions: String,
 )
 
+enum class BackendType { SFTP, SMB, RCLONE }
+
+/** Clipboard for cross-filesystem copy/move. */
+data class FileClipboard(
+    val entries: List<SftpEntry>,
+    val sourceProfileId: String,
+    val sourceBackendType: BackendType,
+    val sourceRemoteName: String?,
+    val isCut: Boolean,
+    /** Cached SFTP channel from source — survives profile switch. */
+    @Transient val sourceSftpChannel: com.jcraft.jsch.ChannelSftp? = null,
+    /** Cached SMB client from source — survives profile switch. */
+    @Transient val sourceSmbClient: sh.haven.core.smb.SmbClient? = null,
+)
+
 enum class SortMode {
     NAME_ASC, NAME_DESC, SIZE_ASC, SIZE_DESC, DATE_ASC, DATE_DESC
 }
@@ -122,6 +137,41 @@ class SftpViewModel @Inject constructor(
         _uploadConflict.value = null
     }
 
+    /** Cross-filesystem clipboard. */
+    private val _clipboard = MutableStateFlow<FileClipboard?>(null)
+    val clipboard: StateFlow<FileClipboard?> = _clipboard.asStateFlow()
+
+    fun copyToClipboard(entries: List<SftpEntry>, isCut: Boolean) {
+        val profileId = _activeProfileId.value ?: return
+        Log.d(TAG, "copyToClipboard: ${entries.size} entries, isCut=$isCut, profile=$profileId, " +
+            "isRclone=${_isRcloneProfile.value}, isSmb=${_isSmbProfile.value}, " +
+            "rcloneRemote=$activeRcloneRemote, sftpChannel=${sftpChannel?.isConnected}, smbClient=${activeSmbClient != null}")
+        val backendType = when {
+            _isRcloneProfile.value -> BackendType.RCLONE
+            _isSmbProfile.value -> BackendType.SMB
+            else -> BackendType.SFTP
+        }
+        // Open a dedicated SFTP channel for copy (separate from browse channel)
+        val copyChannel = if (backendType == BackendType.SFTP) {
+            sessionManager.openSftpForProfile(profileId)
+        } else null
+        Log.d(TAG, "copyToClipboard: dedicated copy channel=${copyChannel?.isConnected}")
+        _clipboard.value = FileClipboard(
+            entries = entries,
+            sourceProfileId = profileId,
+            sourceBackendType = backendType,
+            sourceRemoteName = activeRcloneRemote,
+            isCut = isCut,
+            sourceSftpChannel = copyChannel,
+            sourceSmbClient = if (backendType == BackendType.SMB) activeSmbClient else null,
+        )
+        _message.value = "${entries.size} item${if (entries.size > 1) "s" else ""} ${if (isCut) "cut" else "copied"}"
+    }
+
+    fun clearClipboard() {
+        _clipboard.value = null
+    }
+
     private var sftpChannel: ChannelSftp? = null
     private var activeSmbClient: SmbClient? = null
 
@@ -139,6 +189,14 @@ class SftpViewModel @Inject constructor(
 
     /** Pending rclone profile to auto-select when navigating to Files tab. */
     private val _pendingRcloneProfileId = MutableStateFlow<String?>(null)
+
+    /** Per-profile state cache so tab switching preserves path and entries. */
+    private data class ProfileBrowseState(
+        val path: String,
+        val entries: List<SftpEntry>,
+        val allEntries: List<SftpEntry>,
+    )
+    private val profileStateCache = mutableMapOf<String, ProfileBrowseState>()
 
     init {
         // Restore persisted sort mode
@@ -236,23 +294,56 @@ class SftpViewModel @Inject constructor(
     }
 
     fun selectProfile(profileId: String) {
+        Log.d(TAG, "selectProfile: $profileId (prev=${_activeProfileId.value}, clipboard=${_clipboard.value != null})")
+
+        // Save current profile's browse state before switching
+        _activeProfileId.value?.let { prevId ->
+            profileStateCache[prevId] = ProfileBrowseState(
+                path = _currentPath.value,
+                entries = _entries.value,
+                allEntries = _allEntries.value,
+            )
+        }
+
         val isSmb = smbSessionManager.isProfileConnected(profileId)
         val isRclone = rcloneSessionManager.isProfileConnected(profileId)
         _isSmbProfile.value = isSmb
         _isRcloneProfile.value = isRclone
-
         _activeProfileId.value = profileId
         sftpChannel = null
         activeSmbClient = null
         activeRcloneRemote = null
-        _currentPath.value = "/"
-        _allEntries.value = emptyList()
-        _entries.value = emptyList()
 
-        when {
-            isRclone -> openRcloneAndList(profileId)
-            isSmb -> openSmbAndList(profileId)
-            else -> openSftpAndList(profileId, "/")
+        // Restore cached state if available
+        val cached = profileStateCache[profileId]
+        if (cached != null) {
+            _currentPath.value = cached.path
+            _allEntries.value = cached.allEntries
+            _entries.value = cached.entries
+            // Still need to re-establish the backend connection
+            when {
+                isRclone -> {
+                    val remoteName = rcloneSessionManager.getRemoteNameForProfile(profileId)
+                    activeRcloneRemote = remoteName
+                }
+                isSmb -> {
+                    activeSmbClient = smbSessionManager.getClientForProfile(profileId)
+                }
+                else -> {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        sftpChannel = sessionManager.openSftpForProfile(profileId)
+                    }
+                }
+            }
+        } else {
+            _currentPath.value = "/"
+            _allEntries.value = emptyList()
+            _entries.value = emptyList()
+            when {
+                isRclone -> openRcloneAndList(profileId)
+                isSmb -> openSmbAndList(profileId)
+                else -> openSftpAndList(profileId, "/")
+            }
         }
     }
 
@@ -629,6 +720,228 @@ class SftpViewModel @Inject constructor(
         }
     }
 
+    /** Shared counter for recursive copy progress. */
+    private val pasteFileCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+    private fun updatePasteProgress(fileName: String) {
+        val count = pasteFileCount.incrementAndGet()
+        _transferProgress.value = TransferProgress(
+            "$count files: $fileName",
+            0,
+            0,
+        )
+    }
+
+    fun pasteFromClipboard() {
+        val cb = _clipboard.value ?: return
+        val destProfileId = _activeProfileId.value ?: return
+        val destPath = _currentPath.value
+        Log.d(TAG, "pasteFromClipboard: ${cb.entries.size} entries from ${cb.sourceBackendType}(${cb.sourceProfileId}) " +
+            "to dest=$destProfileId, destPath=$destPath, isRclone=${_isRcloneProfile.value}, isSmb=${_isSmbProfile.value}, " +
+            "srcSftp=${cb.sourceSftpChannel?.isConnected}, srcSmb=${cb.sourceSmbClient != null}, " +
+            "dstRclone=$activeRcloneRemote, dstSftp=${sftpChannel?.isConnected}, dstSmb=${activeSmbClient != null}")
+
+        val destType = when {
+            _isRcloneProfile.value -> BackendType.RCLONE
+            _isSmbProfile.value -> BackendType.SMB
+            else -> BackendType.SFTP
+        }
+        val destRemote = activeRcloneRemote
+
+        viewModelScope.launch {
+            try {
+                _loading.value = true
+                pasteFileCount.set(0)
+                _transferProgress.value = TransferProgress("Preparing...", 0, 0)
+
+                for (entry in cb.entries) {
+                    val destEntryPath = destPath.trimEnd('/') + "/" + entry.name
+
+                    withContext(Dispatchers.IO) {
+                        if (cb.sourceBackendType == BackendType.RCLONE && destType == BackendType.RCLONE) {
+                            val srcRemote = cb.sourceRemoteName ?: throw IllegalStateException("No source remote")
+                            val dstRemote = destRemote ?: throw IllegalStateException("No dest remote")
+                            if (entry.isDirectory) {
+                                rcloneClient.mkdir(dstRemote, destEntryPath)
+                                copyRcloneDir(srcRemote, entry.path, dstRemote, destEntryPath)
+                            } else {
+                                rcloneClient.copyFile(srcRemote, entry.path, dstRemote, destEntryPath)
+                                updatePasteProgress(entry.name)
+                            }
+                        } else {
+                            if (entry.isDirectory) {
+                                crossCopyDir(cb, entry, destType, destProfileId, destRemote, destEntryPath)
+                            } else {
+                                crossCopyFile(cb, entry, destType, destProfileId, destRemote, destEntryPath)
+                            }
+                        }
+                    }
+
+                    if (cb.isCut) {
+                        withContext(Dispatchers.IO) {
+                            deleteSourceEntry(cb, entry)
+                        }
+                    }
+                }
+
+                _clipboard.value = null
+                _message.value = "${if (cb.isCut) "Moved" else "Copied"} ${pasteFileCount.get()} files"
+                refresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "Paste failed", e)
+                _error.value = "Paste failed: ${e.message}"
+            } finally {
+                _loading.value = false
+                _transferProgress.value = null
+            }
+        }
+    }
+
+    /** Copy a single file between backends via temp file. */
+    private fun crossCopyFile(
+        cb: FileClipboard, entry: SftpEntry,
+        destType: BackendType, destProfileId: String, destRemote: String?,
+        destPath: String,
+    ) {
+        val tempFile = java.io.File(appContext.cacheDir, "cross_copy_${entry.name}")
+        try {
+            // Download from source to temp
+            when (cb.sourceBackendType) {
+                BackendType.RCLONE -> {
+                    val srcRemote = cb.sourceRemoteName!!
+                    rcloneClient.copyFile(srcRemote, entry.path, tempFile.parent!!, tempFile.name)
+                }
+                BackendType.SFTP -> {
+                    val channel = cb.sourceSftpChannel
+                        ?: sessionManager.openSftpForProfile(cb.sourceProfileId)
+                        ?: throw IllegalStateException("SFTP not connected")
+                    tempFile.outputStream().use { out -> channel.get(entry.path, out) }
+                }
+                BackendType.SMB -> {
+                    val client = cb.sourceSmbClient
+                        ?: smbSessionManager.getClientForProfile(cb.sourceProfileId)
+                        ?: throw IllegalStateException("SMB not connected")
+                    tempFile.outputStream().use { out -> client.download(entry.path, out) { _, _ -> } }
+                }
+            }
+
+            // Upload from temp to destination
+            when (destType) {
+                BackendType.RCLONE -> {
+                    rcloneClient.copyFile(tempFile.parent!!, tempFile.name, destRemote!!, destPath)
+                }
+                BackendType.SFTP -> {
+                    val channel = getOrOpenChannel(destProfileId) ?: throw IllegalStateException("SFTP not connected")
+                    tempFile.inputStream().use { input -> channel.put(input, destPath) }
+                }
+                BackendType.SMB -> {
+                    val client = activeSmbClient ?: throw IllegalStateException("SMB not connected")
+                    tempFile.inputStream().use { input -> client.upload(input, destPath, tempFile.length()) { _, _ -> } }
+                }
+            }
+            updatePasteProgress(entry.name)
+        } finally {
+            tempFile.delete()
+        }
+    }
+
+    /** Recursively copy a directory between backends. */
+    private fun crossCopyDir(
+        cb: FileClipboard, entry: SftpEntry,
+        destType: BackendType, destProfileId: String, destRemote: String?,
+        destPath: String,
+    ) {
+        // Create destination directory
+        when (destType) {
+            BackendType.RCLONE -> rcloneClient.mkdir(destRemote!!, destPath)
+            BackendType.SFTP -> {
+                val channel = getOrOpenChannel(destProfileId) ?: return
+                try { channel.mkdir(destPath) } catch (_: Exception) {}
+            }
+            BackendType.SMB -> {
+                val client = activeSmbClient ?: return
+                client.mkdir(destPath)
+            }
+        }
+
+        // List source directory and copy contents
+        Log.d(TAG, "crossCopyDir: listing ${cb.sourceBackendType} ${entry.path}")
+        val children = when (cb.sourceBackendType) {
+            BackendType.RCLONE -> {
+                rcloneClient.listDirectory(cb.sourceRemoteName!!, entry.path).map { rc ->
+                    val modTime = try { java.time.Instant.parse(rc.modTime).epochSecond } catch (_: Exception) { 0L }
+                    SftpEntry(rc.name, "${entry.path.trimEnd('/')}/${rc.name}", rc.isDir, rc.size, modTime, "")
+                }
+            }
+            BackendType.SFTP -> {
+                val channel = cb.sourceSftpChannel
+                    ?: sessionManager.openSftpForProfile(cb.sourceProfileId) ?: return
+                val results = mutableListOf<SftpEntry>()
+                channel.ls(entry.path) { lsEntry ->
+                    val name = lsEntry.filename
+                    if (name != "." && name != "..") {
+                        results.add(SftpEntry(name, "${entry.path.trimEnd('/')}/$name", lsEntry.attrs.isDir, lsEntry.attrs.size, lsEntry.attrs.mTime.toLong(), ""))
+                    }
+                    com.jcraft.jsch.ChannelSftp.LsEntrySelector.CONTINUE
+                }
+                results
+            }
+            BackendType.SMB -> {
+                val client = cb.sourceSmbClient
+                    ?: smbSessionManager.getClientForProfile(cb.sourceProfileId) ?: return
+                client.listDirectory(entry.path).map { smb ->
+                    SftpEntry(smb.name, smb.path, smb.isDirectory, smb.size, smb.modifiedTime, "")
+                }
+            }
+        }
+
+        Log.d(TAG, "crossCopyDir: found ${children.size} children in ${entry.path}")
+        for (child in children) {
+            val childDest = "${destPath.trimEnd('/')}/${child.name}"
+            if (child.isDirectory) {
+                crossCopyDir(cb, child, destType, destProfileId, destRemote, childDest)
+            } else {
+                crossCopyFile(cb, child, destType, destProfileId, destRemote, childDest)
+            }
+        }
+    }
+
+    /** Recursively copy a directory within rclone (server-side). */
+    private fun copyRcloneDir(srcRemote: String, srcPath: String, dstRemote: String, dstPath: String) {
+        val children = rcloneClient.listDirectory(srcRemote, srcPath)
+        for (child in children) {
+            val childSrc = "${srcPath.trimEnd('/')}/${child.name}"
+            val childDst = "${dstPath.trimEnd('/')}/${child.name}"
+            if (child.isDir) {
+                rcloneClient.mkdir(dstRemote, childDst)
+                copyRcloneDir(srcRemote, childSrc, dstRemote, childDst)
+            } else {
+                rcloneClient.copyFile(srcRemote, childSrc, dstRemote, childDst)
+                updatePasteProgress(child.name)
+            }
+        }
+    }
+
+    /** Delete a source entry (for cut/move operations). */
+    private fun deleteSourceEntry(cb: FileClipboard, entry: SftpEntry) {
+        when (cb.sourceBackendType) {
+            BackendType.RCLONE -> {
+                if (entry.isDirectory) rcloneClient.deleteDir(cb.sourceRemoteName!!, entry.path)
+                else rcloneClient.deleteFile(cb.sourceRemoteName!!, entry.path)
+            }
+            BackendType.SFTP -> {
+                val channel = cb.sourceSftpChannel
+                    ?: sessionManager.openSftpForProfile(cb.sourceProfileId) ?: return
+                if (entry.isDirectory) channel.rmdir(entry.path) else channel.rm(entry.path)
+            }
+            BackendType.SMB -> {
+                val client = cb.sourceSmbClient
+                    ?: smbSessionManager.getClientForProfile(cb.sourceProfileId) ?: return
+                client.delete(entry.path, entry.isDirectory)
+            }
+        }
+    }
+
     fun dismissError() { _error.value = null }
     fun dismissMessage() { _message.value = null }
 
@@ -803,7 +1116,9 @@ class SftpViewModel @Inject constructor(
                 _loading.value = true
                 withContext(Dispatchers.IO) {
                     val remoteName = rcloneSessionManager.getRemoteNameForProfile(profileId)
-                        ?: throw IllegalStateException("Rclone session not connected")
+                    Log.d(TAG, "openRcloneAndList: profileId=$profileId, remoteName=$remoteName, " +
+                        "isConnected=${rcloneSessionManager.isProfileConnected(profileId)}")
+                    if (remoteName == null) throw IllegalStateException("Rclone session not connected")
                     activeRcloneRemote = remoteName
                     _currentPath.value = "/"
                     loadRcloneEntries(remoteName, "")
