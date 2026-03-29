@@ -1,3 +1,7 @@
+# Allow R8 to proceed with missing classes (JSch references JNA, GSSAPI, SLF4J,
+# Log4j2, and Unix sockets which are unavailable on Android)
+-ignorewarnings
+
 # Keep crypto classes
 -keep class javax.crypto.** { *; }
 -keep class java.security.** { *; }
