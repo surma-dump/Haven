@@ -1453,7 +1453,7 @@ class ConnectionsViewModel @Inject constructor(
 
     /**
      * Finish mosh connection: exec mosh-server on SSH, parse MOSH CONNECT,
-     * disconnect SSH, spawn mosh-client with session manager initial command.
+     * keep the bootstrap SSH session alive for SFTP, and start the mosh transport.
      */
     private suspend fun finishMoshConnect(
         sessionId: String,
@@ -1464,20 +1464,33 @@ class ConnectionsViewModel @Inject constructor(
         chosenSessionName: String?,
     ) {
         val moshConnect = withContext(Dispatchers.IO) {
-            val moshCmd = "mosh-server new -s -c 256 -l LANG=en_US.UTF-8"
-            Log.d(TAG, "Running mosh-server bootstrap: $moshCmd")
-            val result = client.execCommand(moshCmd)
+            // Match upstream mosh more closely:
+            // - allocate a PTY so TERM/SSH_TTY exist during bootstrap
+            // - force a stable terminal type for the remote shell
+            // - reuse the exact numeric host SSH connected to for the UDP leg
+            val udpHost = client.connectedHost ?: serverHost
+            val moshCmd = "TERM=xterm-256color mosh-server new -s -c 256 -l LANG=en_US.UTF-8"
+            Log.d(TAG, "Running mosh-server bootstrap via $udpHost: $moshCmd")
+            val result = client.execCommand(
+                command = moshCmd,
+                allocatePty = true,
+                term = "xterm-256color",
+                cols = 80,
+                rows = 24,
+            )
 
             // Keep SSH client alive for SFTP — don't disconnect
 
             val connectLine = (result.stdout + "\n" + result.stderr)
                 .lines()
+                .map { it.trim() }
                 .firstOrNull { it.startsWith("MOSH CONNECT") }
                 ?: run {
                     client.disconnect()
                     throw Exception(
                         "mosh-server not found or failed. " +
                             "Install with: apt install mosh\n" +
+                            "stdout: ${result.stdout.take(200)}\n" +
                             "stderr: ${result.stderr.take(200)}"
                     )
                 }
@@ -1488,7 +1501,7 @@ class ConnectionsViewModel @Inject constructor(
                 throw Exception("Unexpected mosh-server output: $connectLine")
             }
 
-            Triple(serverHost, parts[2].toInt(), parts[3])
+            Triple(udpHost, parts[2].toInt(), parts[3])
         }
 
         val (serverIp, moshPort, moshKey) = moshConnect

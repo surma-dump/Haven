@@ -33,6 +33,8 @@ class MoshSession(
     private val serverIp: String,
     private val moshPort: Int,
     private val moshKey: String,
+    private val initialCols: Int,
+    private val initialRows: Int,
     private val onDataReceived: (ByteArray, Int, Int) -> Unit,
     private val onDisconnected: ((cleanExit: Boolean) -> Unit)? = null,
 ) : Closeable {
@@ -68,6 +70,10 @@ class MoshSession(
             logger = AndroidMoshLogger,
         )
         transport = t
+        // Upstream mosh sends an initial terminal size immediately on startup.
+        // Without this, some servers sit at a blank screen until the first UI
+        // resize event or keypress arrives.
+        t.resize(initialCols, initialRows)
         t.start(scope)
     }
 

@@ -34,6 +34,8 @@ class MoshSessionManager @Inject constructor(
         val serverIp: String = "",
         val moshPort: Int = 0,
         val moshKey: String = "",
+        val initialCols: Int = 80,
+        val initialRows: Int = 24,
         val moshSession: MoshSession? = null,
         /** Shell command to run after mosh connects (e.g. session manager attach). */
         val initialCommand: String? = null,
@@ -98,6 +100,8 @@ class MoshSessionManager @Inject constructor(
                 serverIp = serverIp,
                 moshPort = moshPort,
                 moshKey = moshKey,
+                initialCols = cols,
+                initialRows = rows,
                 sshClient = sshClient,
             ))
         }
@@ -134,6 +138,8 @@ class MoshSessionManager @Inject constructor(
             serverIp = session.serverIp,
             moshPort = session.moshPort,
             moshKey = session.moshKey,
+            initialCols = session.initialCols,
+            initialRows = session.initialRows,
             onDataReceived = onDataReceived,
             onDisconnected = { _ ->
                 Log.d(TAG, "Session $sessionId disconnected")

@@ -37,6 +37,9 @@ class SshClient : Closeable {
     /** Set before connect() to capture verbose SSH protocol output. */
     var verboseLogger: SshVerboseLogger? = null
     private var session: Session? = null
+    /** Numeric host/IP actually used for the current SSH connection. */
+    var connectedHost: String? = null
+        private set
 
     val isConnected: Boolean
         get() = session?.isConnected == true
@@ -105,6 +108,7 @@ class SshClient : Closeable {
 
         sess.connect(connectTimeoutMs)
         session = sess
+        connectedHost = resolvedIp
         extractHostKey(sess, config.host, config.port)
     }
 
@@ -146,11 +150,21 @@ class SshClient : Closeable {
      * Execute a command on the remote host and return stdout, stderr, and exit status.
      * Must be called after [connect].
      */
-    suspend fun execCommand(command: String): ExecResult = withContext(Dispatchers.IO) {
+    suspend fun execCommand(
+        command: String,
+        allocatePty: Boolean = false,
+        term: String = "xterm-256color",
+        cols: Int = 80,
+        rows: Int = 24,
+    ): ExecResult = withContext(Dispatchers.IO) {
         val sess = session ?: throw IllegalStateException("Not connected")
         val channel = sess.openChannel("exec") as ChannelExec
         channel.setCommand(command)
         channel.inputStream = null
+        if (allocatePty) {
+            channel.setPty(true)
+            channel.setPtyType(term, cols, rows, 0, 0)
+        }
 
         val stdout = channel.inputStream
         val stderr = channel.errStream
@@ -226,6 +240,7 @@ class SshClient : Closeable {
 
         sess.connect(connectTimeoutMs)
         session = sess
+        connectedHost = resolvedIp
         return extractHostKey(sess, config.host, config.port)
     }
 
@@ -279,6 +294,7 @@ class SshClient : Closeable {
     fun disconnect() {
         session?.disconnect()
         session = null
+        connectedHost = null
         jsch.removeAllIdentity()
     }
 
