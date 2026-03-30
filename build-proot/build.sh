@@ -95,6 +95,13 @@ build_for_arch() {
     )
     echo "talloc built: $TALLOC_INSTALL/lib/libtalloc.a"
 
+    # Create TLS alignment fix object — Android 15 requires 64-byte TLS
+    # alignment on ARM64. Adding an aligned TLS variable forces the linker
+    # to produce a TLS segment with the correct alignment.
+    local TLS_FIX="$PWD/$BUILD_DIR/tls_align.o"
+    echo "__thread int __tls_align_fix __attribute__((aligned(64))) = 0;" | \
+        $CC -fno-emulated-tls -c -x c - -o "$TLS_FIX"
+
     # Build PRoot (Termux fork)
     echo "Building PRoot (Termux fork)..."
     local PROOT_SRC="$BUILD_DIR/proot-termux"
@@ -116,7 +123,7 @@ build_for_arch() {
             OBJDUMP="$TOOLCHAIN/bin/llvm-objdump" \
             CPPFLAGS="-D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I. -I\$(VPATH) -I\$(VPATH)/../lib/uthash/include -I$TALLOC_INSTALL/include" \
             CFLAGS="-g -Wall -O2 -I$TALLOC_INSTALL/include" \
-            LDFLAGS="-L$TALLOC_INSTALL/lib -ltalloc -static" \
+            LDFLAGS="-L$TALLOC_INSTALL/lib -ltalloc -static $TLS_FIX" \
             CARE_LDFLAGS="" \
             HAS_SWIG="" \
             HAS_PYTHON_CONFIG="" \
