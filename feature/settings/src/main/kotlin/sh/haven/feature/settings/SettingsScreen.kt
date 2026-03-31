@@ -324,6 +324,24 @@ fun SettingsScreen(
             subtitle = waylandShellCommand,
             onClick = { showWaylandShellDialog = true },
         )
+        run {
+            val shizukuAvailable = sh.haven.core.local.WaylandSocketHelper.isShizukuAvailable()
+            val shizukuGranted = shizukuAvailable && sh.haven.core.local.WaylandSocketHelper.hasShizukuPermission()
+            SettingsItem(
+                icon = Icons.Filled.DesktopWindows,
+                title = "Termux Wayland access (Shizuku)",
+                subtitle = when {
+                    shizukuGranted -> "Enabled — socket linked to /data/local/tmp/haven-wayland/"
+                    shizukuAvailable -> "Shizuku installed — tap to grant permission"
+                    else -> "Install Shizuku for cross-app socket access"
+                },
+                onClick = {
+                    if (shizukuAvailable && !shizukuGranted) {
+                        sh.haven.core.local.WaylandSocketHelper.requestPermission()
+                    }
+                },
+            )
+        }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 

@@ -688,6 +688,8 @@ chmod +x /root/.vnc/xstartup""")
         }
         if (socket.exists()) {
             Log.d(TAG, "Native compositor started, socket: ${socket.absolutePath}")
+            // Try to create a symlink in /data/local/tmp/ via Shizuku for Termux access
+            WaylandSocketHelper.tryCreateSymlink(socket.absolutePath)
         } else {
             Log.e(TAG, "Native compositor socket not created after ${waited * 500}ms")
         }
