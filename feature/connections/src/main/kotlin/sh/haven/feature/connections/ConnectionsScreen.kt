@@ -555,6 +555,9 @@ fun ConnectionsScreen(
             onStart = { password, de ->
                 viewModel.setupDesktop(profile, password, de)
             },
+            onShellSelected = { shell ->
+                viewModel.setWaylandShellCommand(shell)
+            },
             onDismiss = {
                 setupDesktopProfile = null
                 viewModel.resetDesktopSetupState()
@@ -1512,9 +1515,11 @@ private fun LinuxVmCard(
 private fun DesktopSetupDialog(
     desktopState: sh.haven.core.local.ProotManager.DesktopSetupState,
     onStart: (password: String, de: sh.haven.core.local.ProotManager.DesktopEnvironment) -> Unit,
+    onShellSelected: (String) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     var password by rememberSaveable { mutableStateOf("haven") }
+    var shellCmd by rememberSaveable { mutableStateOf("/bin/sh") }
     val deOptions = sh.haven.core.local.ProotManager.DesktopEnvironment.entries
     var selectedDe by rememberSaveable { mutableIntStateOf(0) }
     val isInstalling = desktopState is sh.haven.core.local.ProotManager.DesktopSetupState.Installing
@@ -1557,7 +1562,6 @@ private fun DesktopSetupDialog(
                         }
                         @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                         if (currentDe.isNative) {
-                            var shellCmd by rememberSaveable { mutableStateOf("/bin/sh") }
                             var shellExpanded by remember { mutableStateOf(false) }
                             val shellOptions = listOf("/bin/sh", "/bin/ash", "/bin/bash", "/bin/zsh", "/bin/fish")
                             ExposedDropdownMenuBox(
@@ -1617,7 +1621,10 @@ private fun DesktopSetupDialog(
         confirmButton = {
             if (desktopState is sh.haven.core.local.ProotManager.DesktopSetupState.Idle) {
                 TextButton(
-                    onClick = { onStart(password, deOptions[selectedDe]) },
+                    onClick = {
+                        if (deOptions[selectedDe].isNative) onShellSelected(shellCmd)
+                        onStart(password, deOptions[selectedDe])
+                    },
                 ) { Text("Install") }
             }
         },

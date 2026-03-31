@@ -521,7 +521,7 @@ chmod +x /root/.vnc/xstartup""")
      * Xvnc runs directly (not via vncserver wrapper) to avoid lock file issues.
      * The process stays alive until explicitly killed or the app exits.
      */
-    fun startVncServer() {
+    fun startVncServer(waylandShellCommand: String = "/bin/sh -l") {
         // Kill any existing VNC process (our handle + orphans from previous app instances)
         vncProcess?.destroyForcibly()
         killOrphanedXvnc()
@@ -529,7 +529,7 @@ chmod +x /root/.vnc/xstartup""")
         val de = installedDesktop ?: DesktopEnvironment.XFCE4
 
         if (de.isNative) {
-            startNativeCompositor(de)
+            startNativeCompositor(de, waylandShellCommand)
             return
         }
 
@@ -638,7 +638,7 @@ chmod +x /root/.vnc/xstartup""")
         }
     }
 
-    private fun startNativeCompositor(de: DesktopEnvironment) {
+    private fun startNativeCompositor(de: DesktopEnvironment, shellCommand: String = "/bin/sh -l") {
         val bridge = sh.haven.core.wayland.WaylandBridge
 
         // Prepare XDG runtime dir (must be mode 0700, owned by app)
@@ -711,8 +711,8 @@ chmod +x /root/.vnc/xstartup""")
                 "unset FONTCONFIG_FILE; " +
                 "unset XKB_CONFIG_ROOT; " +
                 "export TERM=xterm-256color; " +
-                "export SHELL=/bin/sh; " +
-                "foot 2>&1 & " +
+                "export SHELL=${shellCommand.split(" ").first()}; " +
+                "foot -e $shellCommand 2>&1 & " +
                 "wait",
         ).apply {
             environment().apply {

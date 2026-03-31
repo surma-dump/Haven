@@ -861,10 +861,11 @@ class ConnectionsViewModel @Inject constructor(
                 // Start VNC server via a standalone proot process
                 // (doesn't need an active terminal session)
                 Log.d(TAG, "Starting VNC server via proot...")
+                val shellCmd = preferencesRepository.waylandShellCommand.first()
                 withContext(Dispatchers.IO) {
-                    prootManager.startVncServer()
+                    prootManager.startVncServer(shellCmd)
                 }
-                Log.d(TAG, "VNC server start initiated")
+                Log.d(TAG, "VNC server start initiated (shell=$shellCmd)")
 
                 if (de.isNative) {
                     // Native Wayland — no VNC needed
@@ -910,6 +911,12 @@ class ConnectionsViewModel @Inject constructor(
         localSessionManager.prootManager.resetDesktopState()
     }
 
+    fun setWaylandShellCommand(command: String) {
+        viewModelScope.launch {
+            preferencesRepository.setWaylandShellCommand(command)
+        }
+    }
+
     /** True if the PRoot desktop environment is already installed. */
     val isDesktopInstalled: Boolean
         get() = localSessionManager.prootManager.isDesktopInstalled
@@ -923,8 +930,9 @@ class ConnectionsViewModel @Inject constructor(
         viewModelScope.launch {
             _launchingDesktop.value = true
             val prootManager = localSessionManager.prootManager
+            val shellCmd = preferencesRepository.waylandShellCommand.first()
             withContext(Dispatchers.IO) {
-                prootManager.startVncServer()
+                prootManager.startVncServer(shellCmd)
             }
             if (prootManager.installedDesktop?.isNative == true) {
                 delay(2000) // native compositor startup
