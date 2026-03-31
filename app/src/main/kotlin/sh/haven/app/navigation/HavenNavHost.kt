@@ -266,15 +266,13 @@ fun HavenNavHost(
             }
         }
     ) { innerPadding ->
-        val isWaylandDesktopPage = screens.getOrNull(pagerState.currentPage) == Screen.Desktop &&
-            (waylandRunning || pendingWaylandDesktop)
         HorizontalPager(
             state = pagerState,
-            userScrollEnabled = !desktopFullscreen && !desktopConnected && !terminalSelectionActive && !isWaylandDesktopPage,
+            userScrollEnabled = !desktopFullscreen && !desktopConnected && !terminalSelectionActive,
             modifier = Modifier
                 .padding(innerPadding)
                 .consumeWindowInsets(innerPadding)
-                .then(if (isWaylandDesktopPage) Modifier else Modifier.imePadding()),
+                .imePadding(),
         ) { page ->
             when (screens[page]) {
                 Screen.Connections -> ConnectionsScreen(
