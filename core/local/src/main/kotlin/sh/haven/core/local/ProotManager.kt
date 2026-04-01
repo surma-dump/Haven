@@ -112,7 +112,7 @@ class ProotManager @Inject constructor(
         ),
         WAYLAND_NATIVE(
             label = "Native Wayland",
-            packages = "foot font-noto xkeyboard-config xvfb mesa-dri-gallium mesa-gbm mesa-gl mesa-demos",
+            packages = "foot font-noto xkeyboard-config xwayland mesa-dri-gallium mesa-gbm mesa-gl mesa-demos",
             verifyBinary = "usr/bin/foot",
             startCommands = "", // compositor runs natively via WaylandBridge, not in PRoot
             sizeEstimate = "~5MB",
@@ -687,7 +687,39 @@ chmod +x /root/.vnc/xstartup""")
             File(context.cacheDir, "fontconfig-cache").mkdirs()
         }
 
-        Log.d(TAG, "Starting native compositor: XDG_RUNTIME_DIR=${xdgDir.absolutePath}")
+        // Create an XWayland wrapper script that the compositor can exec.
+        // wlroots forks and execs $WLR_XWAYLAND — this script runs the real
+        // Xwayland binary through PRoot so it has access to X11 libraries.
+        val xwaylandWrapper = File(context.cacheDir, "xwayland-wrapper.sh")
+        val prootBinPath = prootBinary ?: ""
+        val loaderPathXw = File(context.applicationInfo.nativeLibraryDir, "libproot_loader.so").absolutePath
+        xwaylandWrapper.writeText("""
+            #!/system/bin/sh
+            export PROOT_TMP_DIR=${context.cacheDir.absolutePath}
+            export PROOT_LOADER=$loaderPathXw
+            exec $prootBinPath -0 --link2symlink \
+                -r ${rootfsDir.absolutePath} \
+                -b /dev -b /proc -b /sys \
+                -b ${context.cacheDir.absolutePath}:/tmp \
+                -b ${xdgDir.absolutePath}:/tmp/xdg-runtime \
+                /usr/bin/Xwayland "${'$'}@"
+        """.trimIndent() + "\n")
+        xwaylandWrapper.setExecutable(true)
+
+        // Set WLR_XWAYLAND so the compositor forks Xwayland via our PRoot wrapper
+        android.system.Os.setenv("WLR_XWAYLAND", xwaylandWrapper.absolutePath, true)
+
+        // Create labwc config to force-start XWayland (non-lazy)
+        val labwcConfigDir = File(context.cacheDir, "labwc")
+        labwcConfigDir.mkdirs()
+        File(labwcConfigDir, "rc.xml").writeText("""
+            <?xml version="1.0"?>
+            <labwc_config>
+              <core><xwaylandPersistence>yes</xwaylandPersistence></core>
+            </labwc_config>
+        """.trimIndent() + "\n")
+        android.system.Os.setenv("XDG_CONFIG_HOME", context.cacheDir.absolutePath, true)
+        Log.d(TAG, "Starting native compositor: XDG_RUNTIME_DIR=${xdgDir.absolutePath} WLR_XWAYLAND=${xwaylandWrapper.absolutePath}")
         bridge.nativeStart(
             xdgRuntimeDir = xdgDir.absolutePath,
             xkbConfigRoot = xkbDir.absolutePath,
@@ -742,11 +774,11 @@ chmod +x /root/.vnc/xstartup""")
                 "export GALLIUM_DRIVER=virpipe; " +
                 "export VTEST_SOCKET=/tmp/.virgl_test; " +
                 // Start XWayland for X11 apps (renders into Wayland compositor)
-                // Xvfb for X11 apps. XWayland would be better (visible in
-                // compositor) but needs labwc rebuilt with -Dxwayland=enabled.
+                // XWayland is started by the compositor via WLR_XWAYLAND.
+                // Wait for the X11 socket, fallback to Xvfb if not available.
                 "mkdir -p /tmp/.X11-unix; " +
-                "Xvfb :0 -screen 0 1280x720x24 >/dev/null 2>&1 & " +
-                "sleep 1; " +
+                "i=0; while [ ! -e /tmp/.X11-unix/X0 ] && [ \$i -lt 5 ]; do sleep 1; i=\$((i+1)); done; " +
+                "if [ ! -e /tmp/.X11-unix/X0 ]; then Xvfb :0 -screen 0 1280x720x24 >/dev/null 2>&1 & sleep 1; fi; " +
                 "export DISPLAY=:0; " +
                 "foot -e $shellCommand 2>&1; " +
                 "wait",
