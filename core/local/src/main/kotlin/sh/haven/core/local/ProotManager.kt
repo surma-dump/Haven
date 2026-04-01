@@ -687,38 +687,18 @@ chmod +x /root/.vnc/xstartup""")
             File(context.cacheDir, "fontconfig-cache").mkdirs()
         }
 
-        // Create an XWayland wrapper script that the compositor can exec.
-        // wlroots forks and execs $WLR_XWAYLAND — this script runs the real
-        // Xwayland binary through PRoot so it has access to X11 libraries.
-        val xwaylandWrapper = File(context.cacheDir, "xwayland-wrapper.sh")
-        val prootBinPath = prootBinary ?: ""
+        // Set up native XWayland wrapper binary.
+        // wlroots forks and execs $WLR_XWAYLAND. Shell scripts don't work
+        // (Android's execvp doesn't handle shebangs). The native wrapper
+        // runs PRoot which then execs Xwayland inside the rootfs.
+        val xwaylandWrapper = File(context.applicationInfo.nativeLibraryDir, "libxwayland_wrapper.so")
         val loaderPathXw = File(context.applicationInfo.nativeLibraryDir, "libproot_loader.so").absolutePath
-        xwaylandWrapper.writeText("""
-            #!/system/bin/sh
-            export PROOT_TMP_DIR=${context.cacheDir.absolutePath}
-            export PROOT_LOADER=$loaderPathXw
-            exec $prootBinPath -0 --link2symlink \
-                -r ${rootfsDir.absolutePath} \
-                -b /dev -b /proc -b /sys \
-                -b ${context.cacheDir.absolutePath}:/tmp \
-                -b ${xdgDir.absolutePath}:/tmp/xdg-runtime \
-                /usr/bin/Xwayland "${'$'}@"
-        """.trimIndent() + "\n")
-        xwaylandWrapper.setExecutable(true)
-
-        // Set WLR_XWAYLAND so the compositor forks Xwayland via our PRoot wrapper
         android.system.Os.setenv("WLR_XWAYLAND", xwaylandWrapper.absolutePath, true)
-
-        // Create labwc config to force-start XWayland (non-lazy)
-        val labwcConfigDir = File(context.cacheDir, "labwc")
-        labwcConfigDir.mkdirs()
-        File(labwcConfigDir, "rc.xml").writeText("""
-            <?xml version="1.0"?>
-            <labwc_config>
-              <core><xwaylandPersistence>yes</xwaylandPersistence></core>
-            </labwc_config>
-        """.trimIndent() + "\n")
-        android.system.Os.setenv("XDG_CONFIG_HOME", context.cacheDir.absolutePath, true)
+        android.system.Os.setenv("HAVEN_PROOT_BIN", prootBinary ?: "", true)
+        android.system.Os.setenv("HAVEN_PROOT_LOADER", loaderPathXw, true)
+        android.system.Os.setenv("HAVEN_PROOT_ROOTFS", rootfsDir.absolutePath, true)
+        android.system.Os.setenv("HAVEN_CACHE_DIR", context.cacheDir.absolutePath, true)
+        android.system.Os.setenv("HAVEN_XDG_DIR", xdgDir.absolutePath, true)
         Log.d(TAG, "Starting native compositor: XDG_RUNTIME_DIR=${xdgDir.absolutePath} WLR_XWAYLAND=${xwaylandWrapper.absolutePath}")
         bridge.nativeStart(
             xdgRuntimeDir = xdgDir.absolutePath,
