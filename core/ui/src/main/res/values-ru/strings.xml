@@ -2,7 +2,7 @@
 <resources>
     <string name="nav_connections">Связь</string>
     <string name="nav_terminal">Терминал</string>
-    <string name="nav_desktop">Рабочий стол</string>
+    <string name="nav_desktop">Рабстол</string>
     <string name="nav_keys">Ключи</string>
     <string name="nav_sftp">Файлы</string>
     <string name="nav_settings">Настройки</string>
