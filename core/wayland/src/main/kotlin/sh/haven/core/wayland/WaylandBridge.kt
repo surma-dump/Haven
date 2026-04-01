@@ -56,8 +56,8 @@ object WaylandBridge {
     /** Set viewport offset in compositor buffer pixels (for pan/scroll). */
     external fun nativeSetViewport(x: Int, y: Int)
 
-    /** Launch a native Wayland client binary (e.g. GPU benchmark). */
-    external fun nativeLaunchBenchmark(binaryPath: String)
+    /** Toggle a native Wayland client binary (e.g. GPU benchmark). Returns true if started, false if stopped. */
+    external fun nativeLaunchBenchmark(binaryPath: String): Boolean
 
     /** Start virgl_test_server for GPU-accelerated OpenGL in PRoot apps. */
     external fun nativeStartVirglServer(binaryPath: String, socketPath: String)

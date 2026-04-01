@@ -112,7 +112,7 @@ class ProotManager @Inject constructor(
         ),
         WAYLAND_NATIVE(
             label = "Native Wayland",
-            packages = "foot font-noto xkeyboard-config",
+            packages = "foot font-noto xkeyboard-config xvfb mesa-dri-gallium mesa-gbm mesa-gl mesa-demos",
             verifyBinary = "usr/bin/foot",
             startCommands = "", // compositor runs natively via WaylandBridge, not in PRoot
             sizeEstimate = "~5MB",
@@ -567,8 +567,22 @@ chmod +x /root/.vnc/xstartup""")
                 "sleep 3; " +
                 "export DISPLAY=:1; " +
                 "export HOME=/root; " +
+                // virgl GPU passthrough for GL apps (if virgl_test_server is running)
+                "export GALLIUM_DRIVER=virpipe; " +
+                "export VTEST_SOCKET=/tmp/.virgl_test; " +
                 "${de.startCommands} " +
                 "wait"
+        }
+
+        // Start virgl_test_server for GPU-accelerated OpenGL in PRoot apps
+        val virglBin = File(context.applicationInfo.nativeLibraryDir, "libvirgl_test_server.so")
+        val virglSocket = File(context.cacheDir, ".virgl_test")
+        virglSocket.delete()
+        if (virglBin.canExecute()) {
+            Log.d(TAG, "Starting virgl_test_server for ${de.label}...")
+            sh.haven.core.wayland.WaylandBridge.nativeStartVirglServer(
+                virglBin.absolutePath, virglSocket.absolutePath
+            )
         }
 
         val prootArgs = mutableListOf(
@@ -611,6 +625,7 @@ chmod +x /root/.vnc/xstartup""")
         if (sh.haven.core.wayland.WaylandBridge.nativeIsRunning()) {
             sh.haven.core.wayland.WaylandBridge.nativeStop()
         }
+        sh.haven.core.wayland.WaylandBridge.nativeStopVirglServer()
         vncProcess?.destroyForcibly()
         vncProcess = null
         killOrphanedXvnc()
@@ -694,6 +709,15 @@ chmod +x /root/.vnc/xstartup""")
             Log.e(TAG, "Native compositor socket not created after ${waited * 500}ms")
         }
 
+        // Start virgl_test_server for GPU-accelerated OpenGL in PRoot apps
+        val virglBin = File(context.applicationInfo.nativeLibraryDir, "libvirgl_test_server.so")
+        val virglSocket = File(context.cacheDir, ".virgl_test")
+        virglSocket.delete()
+        if (virglBin.canExecute()) {
+            Log.d(TAG, "Starting virgl_test_server...")
+            bridge.nativeStartVirglServer(virglBin.absolutePath, virglSocket.absolutePath)
+        }
+
         // Start PRoot with Wayland clients, bind-mounting the native socket
         val prootBin = prootBinary ?: return
         val loaderPath = File(context.applicationInfo.nativeLibraryDir, "libproot_loader.so").absolutePath
@@ -714,6 +738,12 @@ chmod +x /root/.vnc/xstartup""")
                 "unset XKB_CONFIG_ROOT; " +
                 "export TERM=xterm-256color; " +
                 "export SHELL=${shellCommand.split(" ").first()}; " +
+                // virgl GPU passthrough env vars
+                "export GALLIUM_DRIVER=virpipe; " +
+                "export VTEST_SOCKET=/tmp/.virgl_test; " +
+                // Start Xvfb for X11 apps (OpenSCAD, FreeCAD, glxgears)
+                "Xvfb :0 -screen 0 640x480x24 >/dev/null 2>&1 & " +
+                "export DISPLAY=:0; " +
                 "foot -e $shellCommand 2>&1 & " +
                 "wait",
         ).apply {

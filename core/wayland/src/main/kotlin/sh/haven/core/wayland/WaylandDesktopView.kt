@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Menu
@@ -81,6 +82,7 @@ fun WaylandDesktopView(
     var panY by remember { mutableFloatStateOf(0f) }
     var fullscreen by remember { mutableStateOf(false) }
     var overlayVisible by remember { mutableStateOf(false) }
+    var benchmarkRunning by remember { mutableStateOf(false) }
     // Remember the initial TextureView container size so the keyboard
     // opening (which shrinks the pager via imePadding) doesn't squash the
     // compositor output. The Box keeps its initial height; the parent
@@ -334,11 +336,14 @@ fun WaylandDesktopView(
                         IconButton(onClick = {
                             val bench = File(context.applicationInfo.nativeLibraryDir, "libbenchmark_gles.so")
                             if (bench.canExecute()) {
-                                WaylandBridge.nativeLaunchBenchmark(bench.absolutePath)
+                                benchmarkRunning = WaylandBridge.nativeLaunchBenchmark(bench.absolutePath)
                             }
                             overlayVisible = false
                         }) {
-                            Icon(Icons.Default.Speed, contentDescription = "GPU Benchmark")
+                            Icon(
+                                if (benchmarkRunning) Icons.Default.Stop else Icons.Default.Speed,
+                                contentDescription = if (benchmarkRunning) "Stop Benchmark" else "GPU Benchmark",
+                            )
                         }
                         IconButton(onClick = {
                             overlayVisible = false
@@ -369,12 +374,16 @@ fun WaylandDesktopView(
                     onClick = {
                         val bench = File(context.applicationInfo.nativeLibraryDir, "libbenchmark_gles.so")
                         if (bench.canExecute()) {
-                            WaylandBridge.nativeLaunchBenchmark(bench.absolutePath)
+                            benchmarkRunning = WaylandBridge.nativeLaunchBenchmark(bench.absolutePath)
                         }
                     },
                     modifier = Modifier.size(32.dp),
                 ) {
-                    Icon(Icons.Default.Speed, contentDescription = "GPU Benchmark", modifier = Modifier.size(18.dp))
+                    Icon(
+                        if (benchmarkRunning) Icons.Default.Stop else Icons.Default.Speed,
+                        contentDescription = if (benchmarkRunning) "Stop Benchmark" else "GPU Benchmark",
+                        modifier = Modifier.size(18.dp),
+                    )
                 }
                 IconButton(
                     onClick = {
