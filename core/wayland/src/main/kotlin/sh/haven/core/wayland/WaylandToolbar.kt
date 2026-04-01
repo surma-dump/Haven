@@ -81,11 +81,11 @@ fun WaylandToolbar(
         navBlockMode = navBlockMode,
         onToggleCtrl = {
             ctrlActive = !ctrlActive
-            WaylandBridge.nativeSendKey(29, if (!ctrlActive) 0 else 1)
+            WaylandBridge.nativeSendKey(29, if (ctrlActive) 1 else 0)
         },
         onToggleAlt = {
             altActive = !altActive
-            WaylandBridge.nativeSendKey(56, if (!altActive) 0 else 1)
+            WaylandBridge.nativeSendKey(56, if (altActive) 1 else 0)
         },
         modifier = modifier,
     )
