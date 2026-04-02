@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -57,7 +58,8 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
 import sh.haven.core.data.preferences.NavBlockMode
@@ -83,12 +85,6 @@ fun WaylandDesktopView(
     var fullscreen by remember { mutableStateOf(false) }
     var overlayVisible by remember { mutableStateOf(false) }
     var benchmarkRunning by remember { mutableStateOf(false) }
-    // Remember the initial TextureView container size so the keyboard
-    // opening (which shrinks the pager via imePadding) doesn't squash the
-    // compositor output. The Box keeps its initial height; the parent
-    // clips rather than stretches.
-    var initialBoxHeight by remember { mutableIntStateOf(0) }
-
     DisposableEffect(Unit) {
         onDispose {
             WaylandBridge.nativeSetSurface(null)
@@ -97,11 +93,23 @@ fun WaylandDesktopView(
 
     val density = LocalDensity.current
     Column(modifier = modifier) {
+    // The parent pager uses imePadding() which shrinks our available height
+    // when the keyboard opens. Counteract by measuring at full height but
+    // reporting the shrunken height to the parent so the toolbar position
+    // doesn't change. The compositor extends behind the keyboard.
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
     Box(
-        modifier = Modifier.weight(1f)
-            .onSizeChanged { size ->
-                // Capture the initial height before keyboard shrinks us
-                if (initialBoxHeight == 0) initialBoxHeight = size.height
+        modifier = Modifier
+            .weight(1f)
+            .layout { measurable, constraints ->
+                // Measure the content at full height (including behind keyboard)
+                val fullHeight = constraints.maxHeight + imeBottomPx
+                val extended = constraints.copy(maxHeight = fullHeight)
+                val placeable = measurable.measure(extended)
+                // Report the original shrunken height so the toolbar stays put
+                layout(placeable.width, constraints.maxHeight) {
+                    placeable.placeRelative(0, 0)
+                }
             }
             .pointerInput(Unit) {
                 awaitEachGesture {
