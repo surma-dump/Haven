@@ -69,6 +69,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -140,6 +141,7 @@ data class ToolbarCallbacks(
     val clipboardManager: ClipboardManager? = null,
     val onPaste: (String) -> Unit = {},
     val onEnterReorderMode: () -> Unit = {},
+    val onAddCustomKey: (ToolbarItem.Custom) -> Unit = {},
 )
 
 val LocalToolbarCallbacks = compositionLocalOf<ToolbarCallbacks> {
@@ -191,6 +193,16 @@ fun KeyboardToolbar(
         clipboardManager = clipboardManager,
         onPaste = onPaste,
         onEnterReorderMode = { onReorderModeChanged(true) },
+        onAddCustomKey = { customKey ->
+            // Add to last row and persist
+            val newRows = layout.rows.toMutableList()
+            if (newRows.isNotEmpty()) {
+                val targetRow = newRows.last().toMutableList()
+                targetRow.add(customKey)
+                newRows[newRows.lastIndex] = targetRow
+            }
+            onToolbarLayoutChanged(ToolbarLayout(newRows))
+        },
     )
 
     CompositionLocalProvider(LocalToolbarCallbacks provides callbacks) {
@@ -394,6 +406,7 @@ private fun AlignedToolbarContent(
             }
         }
         Column(modifier = Modifier.align(Alignment.Bottom)) {
+            AddKeyButton()
             ReorderEditButton()
         }
     }
@@ -548,7 +561,41 @@ private fun ToolbarRow(
                 }
             }
         }
+        AddKeyButton()
         ReorderEditButton()
+    }
+}
+
+@Composable
+private fun AddKeyButton() {
+    val cb = LocalToolbarCallbacks.current
+    var showDialog by remember { mutableStateOf(false) }
+
+    if (showDialog) {
+        AddCustomKeyDialog(
+            onDismiss = { showDialog = false },
+            onSave = { customKey ->
+                showDialog = false
+                cb.onAddCustomKey(customKey)
+            },
+        )
+    }
+
+    FilledTonalButton(
+        onClick = { showDialog = true },
+        modifier = Modifier
+            .padding(horizontal = 2.dp)
+            .height(32.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Icon(
+            Icons.Filled.Add,
+            contentDescription = "Add custom key",
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 
@@ -1100,7 +1147,7 @@ private fun ReorderToolbarContent(
                 ),
             ) {
                 Icon(
-                    Icons.Filled.Edit,
+                    Icons.Filled.Settings,
                     contentDescription = "Toolbar settings",
                     modifier = Modifier.size(18.dp),
                 )
