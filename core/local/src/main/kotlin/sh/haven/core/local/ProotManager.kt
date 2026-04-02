@@ -121,6 +121,38 @@ class ProotManager @Inject constructor(
         ),
     }
 
+    enum class DesktopAddon(
+        val label: String,
+        val description: String,
+        val packages: String,
+        val sizeEstimate: String,
+    ) {
+        PANEL(
+            label = "Panel",
+            description = "Taskbar with clock and app launcher",
+            packages = "waybar fuzzel dbus",
+            sizeEstimate = "~25MB",
+        ),
+        FILE_MANAGER(
+            label = "File Manager",
+            description = "Graphical file browser",
+            packages = "thunar",
+            sizeEstimate = "~10MB",
+        ),
+    }
+
+    /** Which add-ons are installed (persisted as a file in the rootfs). */
+    val installedAddons: Set<DesktopAddon>
+        get() {
+            val marker = File(rootfsDir, "root/.haven-addons")
+            if (!marker.exists()) return emptySet()
+            return try {
+                marker.readText().trim().lines().mapNotNull { line ->
+                    try { DesktopAddon.valueOf(line) } catch (_: Exception) { null }
+                }.toSet()
+            } catch (_: Exception) { emptySet() }
+        }
+
     /** Which DE was last installed (persisted as a file in the rootfs). */
     val installedDesktop: DesktopEnvironment?
         get() {
@@ -514,6 +546,122 @@ chmod +x /root/.vnc/xstartup""")
         }
     }
 
+    /**
+     * Install optional desktop add-ons (panel, file manager, etc.) into the PRoot rootfs.
+     * Packages are installed via apk and config files are written for labwc integration.
+     */
+    suspend fun installAddons(addons: Set<DesktopAddon>) {
+        if (addons.isEmpty()) {
+            // Remove addons marker and configs if user unchecked everything
+            File(rootfsDir, "root/.haven-addons").delete()
+            return
+        }
+
+        try {
+            _desktopState.value = DesktopSetupState.Installing("Installing desktop features...")
+
+            val packages = addons.joinToString(" ") { it.packages }
+            val (installOutput, installExit) = runCommandInProot(
+                "apk update && apk add $packages"
+            )
+            Log.d(TAG, "addon apk install exit=$installExit output(last 300)=${installOutput.takeLast(300)}")
+
+            writeDesktopConfigs()
+
+            // Write marker
+            File(rootfsDir, "root/.haven-addons")
+                .writeText(addons.joinToString("\n") { it.name })
+            Log.d(TAG, "Desktop addons installed: ${addons.map { it.name }}")
+
+            _desktopState.value = DesktopSetupState.Complete
+        } catch (e: Exception) {
+            Log.e(TAG, "Addon install failed", e)
+            _desktopState.value = DesktopSetupState.Error(e.message ?: "Addon install failed")
+        }
+    }
+
+    /** Write mobile-optimized config files for waybar, fuzzel, and labwc menu. */
+    private fun writeDesktopConfigs() {
+        val root = File(rootfsDir, "root")
+
+        // waybar config — bottom bar with app launcher and clock
+        File(root, ".config/waybar").mkdirs()
+        File(root, ".config/waybar/config").writeText(
+            """
+            |{
+            |    "layer": "top",
+            |    "position": "bottom",
+            |    "height": 40,
+            |    "modules-left": ["custom/launcher"],
+            |    "modules-right": ["clock"],
+            |    "custom/launcher": {
+            |        "format": "Apps",
+            |        "on-click": "fuzzel"
+            |    },
+            |    "clock": {
+            |        "format": "{:%H:%M}",
+            |        "format-alt": "{:%Y-%m-%d %H:%M}"
+            |    }
+            |}
+            """.trimMargin()
+        )
+        File(root, ".config/waybar/style.css").writeText(
+            """
+            |* {
+            |    font-family: "Noto Sans", sans-serif;
+            |    font-size: 16px;
+            |    min-height: 0;
+            |}
+            |window#waybar {
+            |    background-color: rgba(30, 30, 46, 0.9);
+            |    color: #cdd6f4;
+            |}
+            |#custom-launcher {
+            |    padding: 0 16px;
+            |    font-weight: bold;
+            |}
+            |#clock {
+            |    padding: 0 16px;
+            |}
+            """.trimMargin()
+        )
+
+        // fuzzel config — large font for touch
+        File(root, ".config/fuzzel").mkdirs()
+        File(root, ".config/fuzzel/fuzzel.ini").writeText(
+            """
+            |[main]
+            |font=Noto Sans:size=14
+            |width=40
+            |lines=15
+            |prompt=>
+            """.trimMargin()
+        )
+
+        writeLabwcMenu()
+
+        Log.d(TAG, "Desktop config files written")
+    }
+
+    /** Write labwc right-click desktop menu. References apps that may or may not be installed. */
+    private fun writeLabwcMenu() {
+        val labwcDir = File(rootfsDir, "root/.config/labwc")
+        labwcDir.mkdirs()
+        File(labwcDir, "menu.xml").writeText(
+            """
+            |<?xml version="1.0" ?>
+            |<openbox_menu>
+            |  <menu id="root-menu" label="">
+            |    <item label="Terminal"><action name="Execute" command="foot"/></item>
+            |    <item label="File Manager"><action name="Execute" command="thunar"/></item>
+            |    <separator />
+            |    <item label="Apps"><action name="Execute" command="fuzzel"/></item>
+            |  </menu>
+            |</openbox_menu>
+            """.trimMargin()
+        )
+    }
+
     private var vncProcess: Process? = null
 
     /**
@@ -760,6 +908,12 @@ chmod +x /root/.vnc/xstartup""")
                 "i=0; while [ ! -e /tmp/.X11-unix/X0 ] && [ \$i -lt 5 ]; do sleep 1; i=\$((i+1)); done; " +
                 "if [ ! -e /tmp/.X11-unix/X0 ]; then Xvfb :0 -screen 0 1280x720x24 >/dev/null 2>&1 & sleep 1; fi; " +
                 "export DISPLAY=:0; " +
+                // Auto-start desktop components if installed.
+                // dbus-run-session provides the session bus waybar requires.
+                "if [ -x /usr/bin/waybar ]; then " +
+                    "dbus-run-session waybar >/tmp/waybar.log 2>&1 & sleep 2; " +
+                "fi; " +
+                "[ -x /usr/bin/thunar ] && thunar --daemon & " +
                 "foot -e $shellCommand 2>&1; " +
                 "wait",
         ).apply {

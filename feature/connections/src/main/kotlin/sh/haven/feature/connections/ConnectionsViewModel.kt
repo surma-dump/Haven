@@ -854,10 +854,16 @@ class ConnectionsViewModel @Inject constructor(
         localProfile: ConnectionProfile,
         vncPassword: String,
         de: sh.haven.core.local.ProotManager.DesktopEnvironment = sh.haven.core.local.ProotManager.DesktopEnvironment.XFCE4,
+        addons: Set<sh.haven.core.local.ProotManager.DesktopAddon> = emptySet(),
     ) {
         viewModelScope.launch {
             val prootManager = localSessionManager.prootManager
             prootManager.setupDesktop(vncPassword, de)
+
+            // Install optional desktop add-ons (panel, file manager, etc.)
+            if (addons.isNotEmpty() && prootManager.desktopState.value is sh.haven.core.local.ProotManager.DesktopSetupState.Complete) {
+                prootManager.installAddons(addons)
+            }
 
             val state = prootManager.desktopState.value
             Log.d(TAG, "Desktop setup result: $state")

@@ -59,6 +59,7 @@ import androidx.compose.material3.Card
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -597,8 +598,8 @@ fun ConnectionsScreen(
     setupDesktopProfile?.let { profile ->
         DesktopSetupDialog(
             desktopState = desktopSetupState,
-            onStart = { password, de ->
-                viewModel.setupDesktop(profile, password, de)
+            onStart = { password, de, addons ->
+                viewModel.setupDesktop(profile, password, de, addons)
             },
             onShellSelected = { shell ->
                 viewModel.setWaylandShellCommand(shell)
@@ -1563,7 +1564,7 @@ private fun LinuxVmCard(
 @Composable
 private fun DesktopSetupDialog(
     desktopState: sh.haven.core.local.ProotManager.DesktopSetupState,
-    onStart: (password: String, de: sh.haven.core.local.ProotManager.DesktopEnvironment) -> Unit,
+    onStart: (password: String, de: sh.haven.core.local.ProotManager.DesktopEnvironment, addons: Set<sh.haven.core.local.ProotManager.DesktopAddon>) -> Unit,
     onShellSelected: (String) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
@@ -1571,6 +1572,9 @@ private fun DesktopSetupDialog(
     var shellCmd by rememberSaveable { mutableStateOf("/bin/sh") }
     val deOptions = sh.haven.core.local.ProotManager.DesktopEnvironment.entries
     var selectedDe by rememberSaveable { mutableIntStateOf(0) }
+    var selectedAddons by remember {
+        mutableStateOf(emptySet<sh.haven.core.local.ProotManager.DesktopAddon>())
+    }
     val isInstalling = desktopState is sh.haven.core.local.ProotManager.DesktopSetupState.Installing
 
     AlertDialog(
@@ -1640,6 +1644,32 @@ private fun DesktopSetupDialog(
                                     }
                                 }
                             }
+                            Text(
+                                stringResource(R.string.connections_desktop_addons_header),
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                            sh.haven.core.local.ProotManager.DesktopAddon.entries.forEach { addon ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Checkbox(
+                                        checked = addon in selectedAddons,
+                                        onCheckedChange = { checked ->
+                                            selectedAddons = if (checked) selectedAddons + addon
+                                                else selectedAddons - addon
+                                        },
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(addon.label, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "${addon.description} (${addon.sizeEstimate})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     is sh.haven.core.local.ProotManager.DesktopSetupState.Installing -> {
@@ -1672,7 +1702,7 @@ private fun DesktopSetupDialog(
                 TextButton(
                     onClick = {
                         if (deOptions[selectedDe].isNative) onShellSelected(shellCmd)
-                        onStart(password, deOptions[selectedDe])
+                        onStart(password, deOptions[selectedDe], selectedAddons)
                     },
                 ) { Text(stringResource(R.string.common_install)) }
             }

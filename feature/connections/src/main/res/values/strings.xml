@@ -108,6 +108,7 @@
     <string name="connections_desktop_vnc_description">Install a desktop environment and VNC server in the PRoot environment.</string>
     <string name="connections_desktop_vnc_password">VNC Password</string>
     <string name="connections_desktop_shell">Shell</string>
+    <string name="connections_desktop_addons_header">Desktop Features (optional)</string>
     <string name="connections_desktop_installed">Desktop installed. Connecting to VNC\u2026</string>
     <string name="connections_desktop_setup_failed">Setup failed: %1$s</string>
 

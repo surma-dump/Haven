@@ -85,6 +85,7 @@ fun WaylandDesktopView(
     var fullscreen by remember { mutableStateOf(false) }
     var overlayVisible by remember { mutableStateOf(false) }
     var benchmarkRunning by remember { mutableStateOf(false) }
+    var textureViewRef by remember { mutableStateOf<android.view.View?>(null) }
     DisposableEffect(Unit) {
         onDispose {
             WaylandBridge.nativeSetSurface(null)
@@ -177,6 +178,7 @@ fun WaylandDesktopView(
                     init {
                         isFocusable = true
                         isFocusableInTouchMode = true
+                        textureViewRef = this
 
                         surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                             private var nativeSurface: Surface? = null
@@ -211,15 +213,10 @@ fun WaylandDesktopView(
                         }
 
                         setOnTouchListener { view, event ->
-                            // Single-finger: pointer events + keyboard
+                            // Single-finger: pointer events (keyboard toggled via button)
                             if (event.pointerCount == 1) {
                                 if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                                     if (!hasFocus()) requestFocus()
-                                    val imm = context.getSystemService(
-                                        android.content.Context.INPUT_METHOD_SERVICE
-                                    ) as android.view.inputmethod.InputMethodManager
-                                    imm.restartInput(this)
-                                    imm.showSoftInput(this, 0)
                                 }
                                 val nx = event.x / view.width
                                 val ny = event.y / view.height
@@ -392,6 +389,21 @@ fun WaylandDesktopView(
                 modifier = Modifier.weight(1f),
             )
             Column {
+                IconButton(
+                    onClick = {
+                        textureViewRef?.let { tv ->
+                            val imm = context.getSystemService(
+                                android.content.Context.INPUT_METHOD_SERVICE
+                            ) as android.view.inputmethod.InputMethodManager
+                            tv.requestFocus()
+                            imm.restartInput(tv)
+                            imm.toggleSoftInput(0, 0)
+                        }
+                    },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(Icons.Default.Keyboard, contentDescription = "Toggle keyboard", modifier = Modifier.size(18.dp))
+                }
                 IconButton(
                     onClick = {
                         val bench = File(context.applicationInfo.nativeLibraryDir, "libbenchmark_gles.so")
