@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.DesktopWindows
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.History
@@ -138,6 +139,7 @@ fun SettingsScreen(
     val backupStatus by viewModel.backupStatus.collectAsState()
     val waylandShellCommand by viewModel.waylandShellCommand.collectAsState()
     var showAuditLog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
     var showWaylandShellDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showSessionManagerDialog by remember { mutableStateOf(false) }
@@ -310,6 +312,17 @@ fun SettingsScreen(
             subtitle = theme.label,
             onClick = { showThemeDialog = true },
         )
+        run {
+            val currentLocale = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales()
+            val currentLang = if (currentLocale.isEmpty) "System default"
+                else java.util.Locale.forLanguageTag(currentLocale.toLanguageTags()).displayLanguage
+            SettingsItem(
+                icon = Icons.Filled.Language,
+                title = stringResource(R.string.settings_language_title),
+                subtitle = currentLang,
+                onClick = { showLanguageDialog = true },
+            )
+        }
         SettingsItem(
             icon = Icons.Filled.Reorder,
             title = stringResource(R.string.settings_screen_order_title),
@@ -419,6 +432,61 @@ fun SettingsScreen(
             onSelect = { selected ->
                 viewModel.setTheme(selected)
                 showThemeDialog = false
+            },
+        )
+    }
+
+    if (showLanguageDialog) {
+        val languages = listOf(
+            "" to "System default",
+            "en" to "English",
+            "ar" to "العربية",
+            "bn" to "বাংলা",
+            "de" to "Deutsch",
+            "es" to "Español",
+            "fr" to "Français",
+            "hi" to "हिन्दी",
+            "ja" to "日本語",
+            "pt" to "Português",
+            "ru" to "Русский",
+            "zh" to "中文",
+        )
+        val currentTag = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales().toLanguageTags()
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text(stringResource(R.string.settings_language_title)) },
+            text = {
+                Column {
+                    languages.forEach { (tag, label) ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val locales = if (tag.isEmpty()) {
+                                        androidx.core.os.LocaleListCompat.getEmptyLocaleList()
+                                    } else {
+                                        androidx.core.os.LocaleListCompat.forLanguageTags(tag)
+                                    }
+                                    androidx.appcompat.app.AppCompatDelegate.setApplicationLocales(locales)
+                                    showLanguageDialog = false
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                        ) {
+                            RadioButton(
+                                selected = (tag.isEmpty() && currentTag.isEmpty()) || tag == currentTag,
+                                onClick = null,
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
         )
     }

@@ -65,6 +65,7 @@
 
     <!-- Appearance section -->
     <string name="settings_theme_title">Theme</string>
+    <string name="settings_language_title">Language</string>
     <string name="settings_screen_order_title">Screen order</string>
     <string name="settings_screen_order_subtitle">Reorder bottom navigation tabs</string>
 

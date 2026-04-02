@@ -181,4 +181,5 @@
     <string name="common_support">সাপোর্ট</string>
     <string name="common_github">GitHub</string>
     <string name="common_simple">সাধারণ</string>
+    <string name="settings_language_title">ভাষা</string>
 </resources>

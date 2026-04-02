@@ -31,6 +31,7 @@ dependencies {
     implementation(project(":core:local"))
     implementation(project(":core:security"))
 
+    implementation(libs.appcompat)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)

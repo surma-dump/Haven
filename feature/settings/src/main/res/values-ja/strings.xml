@@ -181,4 +181,5 @@
     <string name="common_support">サポート</string>
     <string name="common_github">GitHub</string>
     <string name="common_simple">シンプル</string>
+    <string name="settings_language_title">言語</string>
 </resources>
