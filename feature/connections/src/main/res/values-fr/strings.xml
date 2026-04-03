@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">Tout lancer</string>
     <string name="connections_menu_delete_group">Supprimer le groupe</string>
     <string name="connections_new_group_action">Nouveau groupe</string>
+    <string name="connections_desktop_addons_header">Fonctions bureau (optionnel)</string>
 </resources>

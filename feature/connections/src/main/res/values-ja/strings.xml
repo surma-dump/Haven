@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">すべて起動</string>
     <string name="connections_menu_delete_group">グループを削除</string>
     <string name="connections_new_group_action">新しいグループ</string>
+    <string name="connections_desktop_addons_header">デスクトップ機能（オプション）</string>
 </resources>

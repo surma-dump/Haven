@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">সব চালু</string>
     <string name="connections_menu_delete_group">গ্রুপ মুছুন</string>
     <string name="connections_new_group_action">নতুন গ্রুপ</string>
+    <string name="connections_desktop_addons_header">ডেস্কটপ বৈশিষ্ট্য (ঐচ্ছিক)</string>
 </resources>

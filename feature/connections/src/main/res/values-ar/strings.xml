@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">تشغيل الكل</string>
     <string name="connections_menu_delete_group">حذف المجموعة</string>
     <string name="connections_new_group_action">مجموعة جديدة</string>
+    <string name="connections_desktop_addons_header">ميزات سطح المكتب (اختياري)</string>
 </resources>

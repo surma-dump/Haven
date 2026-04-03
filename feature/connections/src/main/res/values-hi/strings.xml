@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">सभी शुरू करें</string>
     <string name="connections_menu_delete_group">समूह हटाएँ</string>
     <string name="connections_new_group_action">नया समूह</string>
+    <string name="connections_desktop_addons_header">डेस्कटॉप सुविधाएँ (वैकल्पिक)</string>
 </resources>

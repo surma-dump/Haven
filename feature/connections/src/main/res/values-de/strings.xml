@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">Alle starten</string>
     <string name="connections_menu_delete_group">Gruppe löschen</string>
     <string name="connections_new_group_action">Neue Gruppe</string>
+    <string name="connections_desktop_addons_header">Desktop-Funktionen (optional)</string>
 </resources>

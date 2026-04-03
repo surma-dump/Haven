@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">Запустить все</string>
     <string name="connections_menu_delete_group">Удалить группу</string>
     <string name="connections_new_group_action">Новая группа</string>
+    <string name="connections_desktop_addons_header">Функции рабочего стола (необязательно)</string>
 </resources>

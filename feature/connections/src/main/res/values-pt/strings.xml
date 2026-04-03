@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">Iniciar todos</string>
     <string name="connections_menu_delete_group">Excluir grupo</string>
     <string name="connections_new_group_action">Novo grupo</string>
+    <string name="connections_desktop_addons_header">Recursos de área de trabalho (opcional)</string>
 </resources>

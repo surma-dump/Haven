@@ -122,4 +122,5 @@
     <string name="connections_menu_launch_all">全部启动</string>
     <string name="connections_menu_delete_group">删除分组</string>
     <string name="connections_new_group_action">新建分组</string>
+    <string name="connections_desktop_addons_header">桌面功能（可选）</string>
 </resources>
