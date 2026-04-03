@@ -58,7 +58,15 @@ val MACRO_PRESETS = listOf(
     MacroPreset("^Z", "\u001a", "Ctrl+Z (suspend)"),
     MacroPreset("^L", "\u000c", "Ctrl+L (clear)"),
     MacroPreset("^A", "\u0001", "Ctrl+A (tmux prefix)"),
+    MacroPreset("^B", "\u0002", "Ctrl+B (tmux/screen prefix)"),
+    MacroPreset("^R", "\u0012", "Ctrl+R (reverse search)"),
+    MacroPreset("^W", "\u0017", "Ctrl+W (delete word)"),
+    MacroPreset("^U", "\u0015", "Ctrl+U (delete line)"),
     MacroPreset("\u21e7Tab", "\u001b[Z", "Shift+Tab"),
+    MacroPreset("C-A-Del", "\u001b[3;8~", "Ctrl+Alt+Delete"),
+    MacroPreset("C-Del", "\u001b[3;6~", "Ctrl+Delete"),
+    MacroPreset("C-Ins", "\u001b[2;5~", "Ctrl+Insert (copy)"),
+    MacroPreset("S-Ins", "\u001b[2;2~", "Shift+Insert (paste)"),
 )
 
 data class ToolbarLayout(val rows: List<List<ToolbarItem>>) {
