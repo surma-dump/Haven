@@ -10,6 +10,7 @@ enum class ToolbarKey(val id: String, val label: String, val isModifier: Boolean
     ESC_KEY("esc", "Esc", isAction = true),
     TAB_KEY("tab", "Tab", isAction = true),
     PASTE("paste", "Paste", isAction = true),
+    SNIPPETS("snippets", "Snippets", isAction = true),
     SHIFT("shift", "Shift", isModifier = true),
     CTRL("ctrl", "Ctrl", isModifier = true),
     ALT("alt", "Alt", isModifier = true),
@@ -87,7 +88,7 @@ enum class ToolbarKey(val id: String, val label: String, val isModifier: Boolean
 
         /** Default row 1: keyboard toggle, function keys, nav block top. */
         val DEFAULT_ROW1 = listOf(
-            KEYBOARD, ESC_KEY, TAB_KEY, PASTE, SYM_SLASH, HOME, ARROW_UP, END, PGUP,
+            SNIPPETS, KEYBOARD, ESC_KEY, TAB_KEY, PASTE, SYM_SLASH, HOME, ARROW_UP, END, PGUP,
         )
 
         /** Default row 2: modifiers, nav block bottom, symbols. */

@@ -142,6 +142,10 @@ data class ToolbarCallbacks(
     val onPaste: (String) -> Unit = {},
     val onEnterReorderMode: () -> Unit = {},
     val onAddCustomKey: (ToolbarItem.Custom) -> Unit = {},
+    val snippets: List<ToolbarItem.Custom> = emptyList(),
+    val onSnippetTap: (ToolbarItem.Custom) -> Unit = {},
+    val onAddSnippet: (ToolbarItem.Custom) -> Unit = {},
+    val onDeleteSnippet: (ToolbarItem.Custom) -> Unit = {},
 )
 
 val LocalToolbarCallbacks = compositionLocalOf<ToolbarCallbacks> {
@@ -182,6 +186,10 @@ fun KeyboardToolbar(
         view.context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
     }
 
+    val allSnippets = remember(layout) {
+        layout.rows.flatMap { row -> row.filterIsInstance<ToolbarItem.Custom>() }
+    }
+
     val callbacks = ToolbarCallbacks(
         onSendBytes = onSendBytes,
         onDispatchKey = onDispatchKey,
@@ -201,6 +209,34 @@ fun KeyboardToolbar(
                 targetRow.add(customKey)
                 newRows[newRows.lastIndex] = targetRow
             }
+            onToolbarLayoutChanged(ToolbarLayout(newRows))
+        },
+        snippets = allSnippets,
+        onSnippetTap = { snippet ->
+            if (snippet.send == "PASTE") {
+                val text = clipboardManager?.primaryClip?.getItemAt(0)?.text?.toString()
+                if (text != null) {
+                    if (bracketPasteMode) {
+                        onSendBytes(("\u001b[200~$text\u001b[201~").toByteArray())
+                    } else {
+                        onSendBytes(text.toByteArray())
+                    }
+                }
+            } else {
+                onSendBytes(snippet.send.toByteArray())
+            }
+        },
+        onAddSnippet = { snippet ->
+            val newRows = layout.rows.toMutableList()
+            if (newRows.isNotEmpty()) {
+                val targetRow = newRows.last().toMutableList()
+                targetRow.add(snippet)
+                newRows[newRows.lastIndex] = targetRow
+            }
+            onToolbarLayoutChanged(ToolbarLayout(newRows))
+        },
+        onDeleteSnippet = { snippet ->
+            val newRows = layout.rows.map { row -> row.filter { it != snippet } }
             onToolbarLayoutChanged(ToolbarLayout(newRows))
         },
     )
@@ -657,6 +693,22 @@ private fun BuiltInKey(
                 } else {
                     cb.onPaste(text)
                 }
+            }
+        }
+        ToolbarKey.SNIPPETS -> {
+            var showSheet by remember { mutableStateOf(false) }
+            ToolbarTextButton("\u2702") { showSheet = true }
+            if (showSheet) {
+                SnippetsBottomSheet(
+                    snippets = cb.snippets,
+                    onDismiss = { showSheet = false },
+                    onSnippetTap = { snippet ->
+                        cb.onSnippetTap(snippet)
+                        showSheet = false
+                    },
+                    onAddSnippet = cb.onAddSnippet,
+                    onDeleteSnippet = cb.onDeleteSnippet,
+                )
             }
         }
         ToolbarKey.SHIFT -> ToolbarToggleButton("Shift", shiftActive, onClick = cb.onToggleShift)
@@ -1661,7 +1713,7 @@ private fun ReorderModeNavKey(item: ToolbarItem) {
 
 // --- Add custom key dialog ---
 
-private fun displaySendSequence(send: String): String {
+internal fun displaySendSequence(send: String): String {
     if (send == "PASTE") return "Paste clipboard"
     return send.map { ch ->
         when {
@@ -1671,7 +1723,7 @@ private fun displaySendSequence(send: String): String {
     }.joinToString("")
 }
 
-private fun parseSendSequence(input: String): String {
+internal fun parseSendSequence(input: String): String {
     val sb = StringBuilder()
     var i = 0
     while (i < input.length) {

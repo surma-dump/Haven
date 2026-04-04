@@ -5,6 +5,8 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -614,6 +616,10 @@ fun TerminalScreen(
                                 },
                                 onFontSizeChanged = { newSize ->
                                     viewModel.setFontSize(newSize.value.toInt())
+                                },
+                                onHyperlinkClick = { url ->
+                                    val finalUrl = if (url.contains("://")) url else "https://$url"
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(finalUrl)))
                                 },
                                 gestureCallback = gestureCallback,
                             )
