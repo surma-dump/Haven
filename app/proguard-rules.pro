@@ -17,7 +17,8 @@
 -dontwarn org.ietf.jgss.**
 -dontwarn org.newsclub.net.unix.**
 -dontwarn javax.naming.**
--dontwarn com.sun.jna.**
+# Keep JNA — native JNI accesses Pointer.peer field by name (needed for IronRDP)
+-keep class com.sun.jna.** { *; }
 -dontwarn com.sun.jna.platform.win32.**
 -dontwarn com.jcraft.jsch.PageantConnector
 -dontwarn com.jcraft.jsch.Log4j2Logger

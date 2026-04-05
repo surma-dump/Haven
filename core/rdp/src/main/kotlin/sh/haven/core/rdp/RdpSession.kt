@@ -108,6 +108,13 @@ class RdpSession(
             // Initial frame
             refreshBitmap()
             log("D", "Initial frame received")
+        } catch (e: UnsatisfiedLinkError) {
+            val msg = "RDP native library failed to load: ${e.message}"
+            log("E", msg)
+            val wrapped = RuntimeException(msg, e)
+            onError?.invoke(wrapped)
+            onDisconnected?.invoke()
+            throw wrapped
         } catch (e: Exception) {
             log("E", "RDP connection failed: ${e.message}")
             onError?.invoke(e)
