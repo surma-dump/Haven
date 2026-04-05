@@ -197,6 +197,48 @@ class RcloneClient @Inject constructor(
         )
     }
 
+    // ── Media server ──────────────────────────────────────────────────
+
+    /**
+     * Start a local HTTP server that streams files from the given remote
+     * via rclone VFS. Returns the port number the server is listening on.
+     * The server binds to 127.0.0.1 (loopback only).
+     */
+    fun startMediaServer(remote: String, preferredPort: Int = 0): Int {
+        check(initialized) { "RcloneClient.initialize() must be called first" }
+        val result = RcloneBridge.startMediaServer(remote, preferredPort.toLong())
+        if (!result.isOk) {
+            val error = try {
+                JSONObject(result.output).optString("error", result.output)
+            } catch (_: Exception) {
+                result.output
+            }
+            throw RcloneException("startMediaServer", result.status, error)
+        }
+        return JSONObject(result.output).getInt("port")
+    }
+
+    /**
+     * Get the current media server port for the given remote, or null if not running.
+     * Does not start a new server.
+     */
+    fun mediaServerPort(remote: String): Int? {
+        if (!initialized) return null
+        val result = RcloneBridge.mediaServerStatus()
+        if (!result.isOk) return null
+        val json = JSONObject(result.output)
+        val port = json.optInt("port", 0)
+        if (port == 0) return null
+        val running = json.optString("remote", "")
+        return if (running == remote) port else null
+    }
+
+    /** Stop the local media streaming HTTP server if running. */
+    fun stopMediaServer() {
+        if (!initialized) return
+        RcloneBridge.stopMediaServer()
+    }
+
     // ── Internal ────────────────────────────────────────────────────────
 
     private fun rpc(method: String, params: JSONObject = JSONObject()): JSONObject {

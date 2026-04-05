@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -80,6 +81,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
+import sh.haven.feature.sftp.SftpViewModel.Companion.isMediaFile
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -104,6 +106,9 @@ fun SftpScreen(
     val lastDownload by viewModel.lastDownload.collectAsState()
     val uploadConflict by viewModel.uploadConflict.collectAsState()
     val fileClipboard by viewModel.clipboard.collectAsState()
+    val isRclone by viewModel.isRcloneProfile.collectAsState()
+    val hasMediaFiles by viewModel.hasMediaFiles.collectAsState()
+    val mediaExtensions by viewModel.mediaExtensionsSet.collectAsState()
 
     LaunchedEffect(pendingSmbProfileId) {
         pendingSmbProfileId?.let { viewModel.setPendingSmbProfile(it) }
@@ -274,7 +279,7 @@ fun SftpScreen(
             if (activeProfileId != null) {
                 var fabExpanded by remember { mutableStateOf(false) }
                 Column(horizontalAlignment = Alignment.End) {
-                    androidx.compose.animation.AnimatedVisibility(visible = fabExpanded) {
+                    AnimatedVisibility(visible = fabExpanded) {
                         Column(
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -315,6 +320,14 @@ fun SftpScreen(
                             }) {
                                 Icon(Icons.Filled.Upload, stringResource(R.string.sftp_upload_file))
                             }
+                            if (hasMediaFiles) {
+                                SmallFloatingActionButton(onClick = {
+                                    fabExpanded = false
+                                    viewModel.playFolder()
+                                }) {
+                                    Icon(Icons.Filled.PlayArrow, stringResource(R.string.sftp_play_folder))
+                                }
+                            }
                         }
                     }
                     if (fileClipboard != null) {
@@ -324,7 +337,11 @@ fun SftpScreen(
                     } else {
                         FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
                             Icon(
-                                if (fabExpanded) Icons.Filled.CreateNewFolder else Icons.Filled.Upload,
+                                when {
+                                    fabExpanded -> Icons.Filled.CreateNewFolder
+                                    hasMediaFiles -> Icons.Filled.PlayArrow
+                                    else -> Icons.Filled.Upload
+                                },
                                 if (fabExpanded) stringResource(R.string.sftp_fab_close) else stringResource(R.string.sftp_fab_actions),
                             )
                         }
@@ -506,6 +523,9 @@ fun SftpScreen(
                                 },
                                 onCopy = { viewModel.copyToClipboard(listOf(entry), isCut = false) },
                                 onCut = { viewModel.copyToClipboard(listOf(entry), isCut = true) },
+                                onPlay = if (isRclone && entry.isMediaFile(mediaExtensions)) {
+                                    { viewModel.playMediaFile(entry) }
+                                } else null,
                             )
                         }
                     }
@@ -584,6 +604,7 @@ private fun FileListItem(
     onCopyPath: () -> Unit,
     onCopy: () -> Unit = {},
     onCut: () -> Unit = {},
+    onPlay: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -620,6 +641,13 @@ private fun FileListItem(
             expanded = showMenu,
             onDismissRequest = { showMenu = false },
         ) {
+            if (onPlay != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.sftp_play)) },
+                    leadingIcon = { Icon(Icons.Filled.PlayArrow, null) },
+                    onClick = { showMenu = false; onPlay() },
+                )
+            }
             if (!entry.isDirectory) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.sftp_download)) },

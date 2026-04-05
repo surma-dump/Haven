@@ -12,8 +12,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -42,6 +45,7 @@ data class SftpEntry(
     val size: Long,
     val modifiedTime: Long,
     val permissions: String,
+    val mimeType: String = "",
 )
 
 enum class BackendType { SFTP, SMB, RCLONE }
@@ -123,6 +127,18 @@ class SftpViewModel @Inject constructor(
     val lastDownload: StateFlow<DownloadResult?> = _lastDownload.asStateFlow()
     fun clearLastDownload() { _lastDownload.value = null }
 
+    /** Parsed set of media extensions from user preferences. */
+    val mediaExtensionsSet: StateFlow<Set<String>> = preferencesRepository.mediaExtensions
+        .map { str -> str.lowercase().split("\\s+".toRegex()).filter { it.isNotEmpty() }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, parseMediaExtensions(UserPreferencesRepository.DEFAULT_MEDIA_EXTENSIONS))
+
+    /** Whether the current folder contains playable media files (rclone only). */
+    private val _hasMediaFiles = MutableStateFlow(false)
+    val hasMediaFiles: StateFlow<Boolean> = _hasMediaFiles.asStateFlow()
+
+    /** Port of the running media server, or null if not running. */
+    private val _mediaServerPort = MutableStateFlow<Int?>(null)
+
     /** Upload conflict resolution. */
     enum class ConflictChoice { SKIP, REPLACE, REPLACE_ALL, SKIP_ALL }
     data class UploadConflict(
@@ -180,6 +196,7 @@ class SftpViewModel @Inject constructor(
 
     /** Tracks which active profile is rclone (vs SFTP/SMB). */
     private val _isRcloneProfile = MutableStateFlow(false)
+    val isRcloneProfile: StateFlow<Boolean> = _isRcloneProfile.asStateFlow()
 
     /** rclone remote name for the active profile. */
     private var activeRcloneRemote: String? = null
@@ -381,7 +398,9 @@ class SftpViewModel @Inject constructor(
 
     private fun applyFilter() {
         val all = _allEntries.value
-        _entries.value = if (_showHidden.value) all else all.filter { !it.name.startsWith(".") }
+        val filtered = if (_showHidden.value) all else all.filter { !it.name.startsWith(".") }
+        _entries.value = filtered
+        _hasMediaFiles.value = _isRcloneProfile.value && filtered.any { it.isMediaFile(mediaExtensionsSet.value) }
     }
 
     fun refresh() {
@@ -1167,6 +1186,7 @@ class SftpViewModel @Inject constructor(
                 size = entry.size,
                 modifiedTime = modTime,
                 permissions = if (entry.isDir) "drwxr-xr-x" else "-rw-r--r--",
+                mimeType = entry.mimeType,
             )
         }
         _allEntries.value = sortEntries(results, _sortMode.value)
@@ -1193,5 +1213,149 @@ class SftpViewModel @Inject constructor(
             SortMode.DATE_DESC -> files.sortedByDescending { it.modifiedTime }
         }
         return sortedDirs + sortedFiles
+    }
+
+    // ── Media streaming ─────────────────────────────────────────────────
+
+    /**
+     * Ensure the media server is running for the current rclone remote.
+     *
+     * The Go-side server is process-scoped and survives ViewModel recreation,
+     * profile switches, and Haven going to background. If a server is already
+     * running for the same remote it is reused (no restart). This keeps VLC
+     * streaming even if Haven drops and reconnects the rclone session.
+     */
+    private suspend fun ensureMediaServer(): Int {
+        val remote = activeRcloneRemote ?: error("No active rclone remote")
+
+        // Fast path: we already know the port from this ViewModel instance.
+        _mediaServerPort.value?.let { return it }
+
+        // Check if the Go side still has a server running for this remote
+        // (survives ViewModel recreation).
+        val existing = withContext(Dispatchers.IO) { rcloneClient.mediaServerPort(remote) }
+        if (existing != null) {
+            _mediaServerPort.value = existing
+            return existing
+        }
+
+        // Start a new server, preferring the last-known port so VLC can
+        // reconnect after an app restart.
+        val preferred = preferencesRepository.lastMediaServerPort.first()
+        val port = withContext(Dispatchers.IO) {
+            rcloneClient.startMediaServer(remote, preferred)
+        }
+        _mediaServerPort.value = port
+        // Persist for next restart.
+        preferencesRepository.setLastMediaServerPort(port)
+        return port
+    }
+
+    /** Play a single media file via HTTP streaming. */
+    fun playMediaFile(entry: SftpEntry) {
+        viewModelScope.launch {
+            try {
+                val port = ensureMediaServer()
+                val url = "http://127.0.0.1:$port/${entry.path}"
+                val mimeType = entry.mimeType.ifEmpty {
+                    android.webkit.MimeTypeMap.getSingleton()
+                        .getMimeTypeFromExtension(entry.name.substringAfterLast('.', "").lowercase())
+                        ?: "video/*"
+                }
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(android.net.Uri.parse(url), mimeType)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                appContext.startActivity(intent)
+            } catch (e: android.content.ActivityNotFoundException) {
+                _error.value = "No media player app installed"
+            } catch (e: Exception) {
+                Log.e(TAG, "Play media failed", e)
+                _error.value = "Playback failed: ${e.message}"
+            }
+        }
+    }
+
+    /** Play all media files in the current folder as a sorted playlist. */
+    fun playFolder() {
+        viewModelScope.launch {
+            try {
+                val port = ensureMediaServer()
+                val mediaEntries = _entries.value
+                    .filter { it.isMediaFile(mediaExtensionsSet.value) }
+                    .sortedWith(compareBy(NATURAL_SORT_COMPARATOR) { it.name })
+
+                if (mediaEntries.isEmpty()) {
+                    _error.value = "No media files in this folder"
+                    return@launch
+                }
+
+                val playlist = buildString {
+                    appendLine("#EXTM3U")
+                    for (entry in mediaEntries) {
+                        appendLine("#EXTINF:-1,${entry.name}")
+                        appendLine("http://127.0.0.1:$port/${entry.path}")
+                    }
+                }
+
+                val cacheDir = java.io.File(appContext.cacheDir, "playlists")
+                cacheDir.mkdirs()
+                val playlistFile = java.io.File(cacheDir, "playlist.m3u8")
+                playlistFile.writeText(playlist)
+
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    appContext,
+                    "${appContext.packageName}.fileprovider",
+                    playlistFile,
+                )
+
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "audio/x-mpegurl")
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                appContext.startActivity(intent)
+            } catch (e: android.content.ActivityNotFoundException) {
+                _error.value = "No media player app installed"
+            } catch (e: Exception) {
+                Log.e(TAG, "Play folder failed", e)
+                _error.value = "Playback failed: ${e.message}"
+            }
+        }
+    }
+
+    companion object {
+        private val MEDIA_MIME_PREFIXES = listOf("audio/", "video/")
+
+        fun parseMediaExtensions(str: String): Set<String> =
+            str.lowercase().split("\\s+".toRegex()).filter { it.isNotEmpty() }.toSet()
+
+        fun SftpEntry.isMediaFile(extensions: Set<String>): Boolean {
+            if (isDirectory) return false
+            if (mimeType.isNotEmpty()) {
+                return MEDIA_MIME_PREFIXES.any { mimeType.startsWith(it) }
+            }
+            val ext = name.substringAfterLast('.', "").lowercase()
+            return ext in extensions
+        }
+
+        /** Natural sort: numeric chunks compared as numbers, text chunks compared lexicographically. */
+        val NATURAL_SORT_COMPARATOR = Comparator<String> { a, b ->
+            val regex = Regex("(\\d+)|(\\D+)")
+            val aParts = regex.findAll(a.lowercase()).map { it.value }.toList()
+            val bParts = regex.findAll(b.lowercase()).map { it.value }.toList()
+            for (i in 0 until minOf(aParts.size, bParts.size)) {
+                val ap = aParts[i]
+                val bp = bParts[i]
+                val aNum = ap.toLongOrNull()
+                val bNum = bp.toLongOrNull()
+                val cmp = when {
+                    aNum != null && bNum != null -> aNum.compareTo(bNum)
+                    else -> ap.compareTo(bp)
+                }
+                if (cmp != 0) return@Comparator cmp
+            }
+            aParts.size.compareTo(bParts.size)
+        }
     }
 }

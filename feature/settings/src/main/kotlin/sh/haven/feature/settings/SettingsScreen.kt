@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.ScreenLockPortrait
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.KeyboardAlt
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
@@ -139,9 +140,11 @@ fun SettingsScreen(
     val terminalRightClick by viewModel.terminalRightClick.collectAsState()
     val backupStatus by viewModel.backupStatus.collectAsState()
     val waylandShellCommand by viewModel.waylandShellCommand.collectAsState()
+    val mediaExtensions by viewModel.mediaExtensions.collectAsState()
     var showAuditLog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showWaylandShellDialog by remember { mutableStateOf(false) }
+    var showMediaExtensionsDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showSessionManagerDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -411,6 +414,13 @@ fun SettingsScreen(
             )
         }
 
+        SettingsItem(
+            icon = Icons.Filled.PlayArrow,
+            title = stringResource(R.string.settings_media_extensions_title),
+            subtitle = mediaExtensions,
+            onClick = { showMediaExtensionsDialog = true },
+        )
+
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
         SettingsItem(
@@ -592,6 +602,44 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showWaylandShellDialog = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+
+    if (showMediaExtensionsDialog) {
+        var extText by rememberSaveable { mutableStateOf(mediaExtensions) }
+        AlertDialog(
+            onDismissRequest = { showMediaExtensionsDialog = false },
+            title = { Text(stringResource(R.string.settings_media_extensions_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        stringResource(R.string.settings_media_extensions_description),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = extText,
+                        onValueChange = { extText = it },
+                        label = { Text(stringResource(R.string.settings_media_extensions_label)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 3,
+                        maxLines = 5,
+                    )
+                    TextButton(onClick = {
+                        extText = UserPreferencesRepository.DEFAULT_MEDIA_EXTENSIONS
+                    }) {
+                        Text(stringResource(R.string.common_reset))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setMediaExtensions(extText.trim())
+                    showMediaExtensionsDialog = false
+                }) { Text(stringResource(R.string.common_save)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMediaExtensionsDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }

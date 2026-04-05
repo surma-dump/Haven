@@ -54,4 +54,40 @@ object RcloneBridge {
             output = result.output,
         )
     }
+
+    /**
+     * Start a local HTTP server that streams files from the given rclone
+     * remote via VFS.  Binds to 127.0.0.1 with an auto-assigned port.
+     *
+     * @param remoteName rclone remote name without trailing colon, e.g. "gdrive"
+     * @return [RpcResult] with JSON `{"port": N}` on success
+     */
+    fun startMediaServer(remoteName: String, preferredPort: Long = 0): RpcResult {
+        check(initialized) { "RcloneBridge.initialize() must be called first" }
+        val result = Rcbridge.rbStartMediaServer(remoteName, preferredPort)
+        return RpcResult(
+            status = result.status.toInt(),
+            output = result.output,
+        )
+    }
+
+    /** Query the current media server state. Returns JSON with "port" and optional "remote". */
+    fun mediaServerStatus(): RpcResult {
+        check(initialized) { "RcloneBridge.initialize() must be called first" }
+        val result = Rcbridge.rbMediaServerStatus()
+        return RpcResult(
+            status = result.status.toInt(),
+            output = result.output,
+        )
+    }
+
+    /** Stop the media streaming HTTP server if running. */
+    fun stopMediaServer(): RpcResult {
+        check(initialized) { "RcloneBridge.initialize() must be called first" }
+        val result = Rcbridge.rbStopMediaServer()
+        return RpcResult(
+            status = result.status.toInt(),
+            output = result.output,
+        )
+    }
 }

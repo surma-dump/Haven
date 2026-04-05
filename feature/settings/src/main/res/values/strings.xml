@@ -77,6 +77,11 @@
     <string name="settings_shizuku_not_running">Shizuku installed but not running — tap to open and start via Wireless Debugging</string>
     <string name="settings_shizuku_not_installed">Install Shizuku for battery exemption and cross-app Wayland access</string>
 
+    <!-- Media streaming -->
+    <string name="settings_media_extensions_title">Media file extensions</string>
+    <string name="settings_media_extensions_description">Space-separated file extensions to treat as streamable media in the file browser.</string>
+    <string name="settings_media_extensions_label">Extensions</string>
+
     <!-- Backup section -->
     <string name="settings_export_backup_title">Export backup</string>
     <string name="settings_export_backup_subtitle">Keys, connections, and settings</string>

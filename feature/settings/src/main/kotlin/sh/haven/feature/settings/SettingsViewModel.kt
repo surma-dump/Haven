@@ -279,4 +279,13 @@ class SettingsViewModel @Inject constructor(
             preferencesRepository.setWaylandShellCommand(command)
         }
     }
+
+    val mediaExtensions: StateFlow<String> = preferencesRepository.mediaExtensions
+        .stateIn(viewModelScope, SharingStarted.Eagerly, UserPreferencesRepository.DEFAULT_MEDIA_EXTENSIONS)
+
+    fun setMediaExtensions(extensions: String) {
+        viewModelScope.launch {
+            preferencesRepository.setMediaExtensions(extensions)
+        }
+    }
 }
