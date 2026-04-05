@@ -92,4 +92,6 @@
     <string name="sftp_replace_all">全部替换</string>
     <string name="sftp_skip">跳过</string>
     <string name="sftp_skip_all">全部跳过</string>
+    <string name="sftp_play">Play</string>
+    <string name="sftp_play_folder">Play folder</string>
 </resources>

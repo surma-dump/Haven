@@ -183,4 +183,7 @@
     <string name="common_github">GitHub</string>
     <string name="common_simple">Simple</string>
     <string name="settings_language_title">Idioma</string>
+    <string name="settings_media_extensions_title">Media file extensions</string>
+    <string name="settings_media_extensions_description">Space-separated file extensions to treat as streamable media in the file browser.</string>
+    <string name="settings_media_extensions_label">Extensions</string>
 </resources>

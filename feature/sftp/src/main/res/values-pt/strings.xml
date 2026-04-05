@@ -92,4 +92,6 @@
     <string name="sftp_replace_all">Substituir tudo</string>
     <string name="sftp_skip">Pular</string>
     <string name="sftp_skip_all">Pular tudo</string>
+    <string name="sftp_play">Play</string>
+    <string name="sftp_play_folder">Play folder</string>
 </resources>

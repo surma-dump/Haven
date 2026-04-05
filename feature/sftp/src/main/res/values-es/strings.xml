@@ -92,4 +92,6 @@
     <string name="sftp_replace_all">Reemplazar todo</string>
     <string name="sftp_skip">Omitir</string>
     <string name="sftp_skip_all">Omitir todo</string>
+    <string name="sftp_play">Play</string>
+    <string name="sftp_play_folder">Play folder</string>
 </resources>

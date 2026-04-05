@@ -92,4 +92,6 @@
     <string name="sftp_replace_all">सभी बदलें</string>
     <string name="sftp_skip">छोड़ें</string>
     <string name="sftp_skip_all">सभी छोड़ें</string>
+    <string name="sftp_play">Play</string>
+    <string name="sftp_play_folder">Play folder</string>
 </resources>
