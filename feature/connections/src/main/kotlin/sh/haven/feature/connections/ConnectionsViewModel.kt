@@ -422,6 +422,7 @@ class ConnectionsViewModel @Inject constructor(
     fun startNetworkDiscovery() {
         networkDiscovery.start()
         networkDiscovery.startVmPolling(viewModelScope)
+        viewModelScope.launch { networkDiscovery.discoverTailscale() }
     }
 
     fun refreshLocalVm() {
@@ -437,6 +438,7 @@ class ConnectionsViewModel @Inject constructor(
         viewModelScope.launch {
             _subnetScanning.value = true
             networkDiscovery.scanSubnet()
+            networkDiscovery.discoverTailscale()
             _subnetScanning.value = false
         }
     }

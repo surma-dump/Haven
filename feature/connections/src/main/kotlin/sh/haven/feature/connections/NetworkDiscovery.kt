@@ -18,11 +18,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.FileReader
+import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.URL
 
 private const val TAG = "NetworkDiscovery"
 
@@ -62,6 +65,7 @@ class NetworkDiscovery(private val context: Context) {
     private var discoveryListener: NsdManager.DiscoveryListener? = null
     private val mdnsHosts = mutableSetOf<DiscoveredHost>()
     private val arpHosts = mutableSetOf<DiscoveredHost>()
+    private val tailscaleHosts = mutableSetOf<DiscoveredHost>()
     private val smbScanHosts = mutableSetOf<DiscoveredHost>()
     private var vmPollingJob: Job? = null
 
@@ -74,6 +78,7 @@ class NetworkDiscovery(private val context: Context) {
         stopMdns()
         mdnsHosts.clear()
         arpHosts.clear()
+        tailscaleHosts.clear()
         smbScanHosts.clear()
         _hosts.value = emptyList()
         _smbHosts.value = emptyList()
@@ -234,6 +239,67 @@ class NetworkDiscovery(private val context: Context) {
             true
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * Discover Tailscale peers via the local API (100.100.100.100).
+     * Silently returns if Tailscale is not running.
+     */
+    suspend fun discoverTailscale() {
+        withContext(Dispatchers.IO) {
+            try {
+                val url = URL("http://100.100.100.100/localapi/v0/status")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 2_000
+                conn.readTimeout = 5_000
+                conn.requestMethod = "GET"
+
+                if (conn.responseCode != 200) {
+                    conn.disconnect()
+                    return@withContext
+                }
+
+                val body = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+
+                val json = JSONObject(body)
+                val peers = json.optJSONObject("Peer") ?: return@withContext
+
+                val discovered = mutableListOf<DiscoveredHost>()
+                for (key in peers.keys()) {
+                    val peer = peers.getJSONObject(key)
+                    if (!peer.optBoolean("Online", false)) continue
+
+                    val hostname = peer.optString("HostName", "").ifEmpty { null }
+                    val ips = peer.optJSONArray("TailscaleIPs")
+                    if (ips == null || ips.length() == 0) continue
+
+                    // Prefer IPv4 tailscale address
+                    val ip = (0 until ips.length())
+                        .map { ips.getString(it) }
+                        .firstOrNull { !it.contains(":") }
+                        ?: ips.getString(0)
+
+                    discovered.add(DiscoveredHost(
+                        address = ip,
+                        hostname = hostname,
+                        port = 22,
+                        source = "tailscale",
+                    ))
+                }
+
+                if (discovered.isNotEmpty()) {
+                    Log.d(TAG, "Tailscale: found ${discovered.size} online peers")
+                    synchronized(tailscaleHosts) {
+                        tailscaleHosts.clear()
+                        tailscaleHosts.addAll(discovered)
+                    }
+                    mergeAndEmit()
+                }
+            } catch (_: Exception) {
+                // Tailscale not running or API not accessible — silently ignore
+            }
         }
     }
 
@@ -419,12 +485,12 @@ class NetworkDiscovery(private val context: Context) {
     }
 
     private fun mergeAndEmit() {
-        val all = (mdnsHosts + arpHosts)
+        val all = (mdnsHosts + arpHosts + tailscaleHosts)
             .distinctBy { it.address }
             .sortedWith(compareBy(
-                { it.port != 22 },       // port 22 first
-                { it.source != "mDNS" }, // mDNS before ARP
-                { it.hostname == null },  // named hosts before bare IPs
+                { it.port != 22 },                                    // port 22 first
+                { it.source != "tailscale" && it.source != "mDNS" }, // tailscale/mDNS before scan
+                { it.hostname == null },                              // named hosts before bare IPs
                 { it.address },
             ))
         _hosts.value = all
