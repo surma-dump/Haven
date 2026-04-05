@@ -421,10 +421,13 @@ class SshSessionManager @Inject constructor(
         val session = _sessions.value.values
             .firstOrNull { it.profileId == profileId && it.connectionConfig != null }
             ?: return null
-        // Deep-copy key material so tearDown() zeroing one session's bytes
+        // Deep-copy auth material so tearDown() zeroing one session's bytes
         // doesn't corrupt the config for other sessions sharing the same profile.
         val config = session.connectionConfig!!
         val safeCopy = when (val auth = config.authMethod) {
+            is ConnectionConfig.AuthMethod.Password -> config.copy(
+                authMethod = ConnectionConfig.AuthMethod.Password(auth.password.copyOf())
+            )
             is ConnectionConfig.AuthMethod.PrivateKey -> config.copy(
                 authMethod = auth.copy(keyBytes = auth.keyBytes.copyOf())
             )
@@ -592,8 +595,11 @@ class SshSessionManager @Inject constructor(
         try { session.client.disconnect() } catch (e: Exception) {
             Log.e(TAG, "tearDown: client.disconnect() failed", e)
         }
-        // Zero out key material so it doesn't linger in heap
-        (session.connectionConfig?.authMethod as? ConnectionConfig.AuthMethod.PrivateKey)
-            ?.keyBytes?.fill(0)
+        // Zero out auth material so it doesn't linger in heap
+        when (val auth = session.connectionConfig?.authMethod) {
+            is ConnectionConfig.AuthMethod.Password -> auth.clear()
+            is ConnectionConfig.AuthMethod.PrivateKey -> auth.keyBytes.fill(0)
+            else -> {}
+        }
     }
 }

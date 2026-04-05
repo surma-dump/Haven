@@ -70,9 +70,7 @@ class SshClient : Closeable {
 
         when (val auth = config.authMethod) {
             is ConnectionConfig.AuthMethod.Password -> {
-                val pw = String(auth.password)
-                sess.setPassword(pw)
-                auth.clear()
+                sess.setPassword(String(auth.password))
             }
             is ConnectionConfig.AuthMethod.PrivateKey -> {
                 jsch.addIdentity(
@@ -193,9 +191,7 @@ class SshClient : Closeable {
 
         when (val auth = config.authMethod) {
             is ConnectionConfig.AuthMethod.Password -> {
-                val pw = String(auth.password)
-                sess.setPassword(pw)
-                auth.clear()
+                sess.setPassword(String(auth.password))
             }
             is ConnectionConfig.AuthMethod.PrivateKey -> {
                 jsch.addIdentity(
