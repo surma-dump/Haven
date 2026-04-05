@@ -60,6 +60,18 @@
 
 ## Near-term
 
+### Cloud & file sync
+- [ ] **rclone sync** — one-tap folder sync between remotes (local ↔ cloud, cloud ↔ cloud) from the file browser, with progress and conflict resolution
+- [ ] **rclone bisync** — two-way sync with change detection for keeping folders in lockstep
+- [x] **Media streaming** — stream audio/video from rclone remotes to VLC/any player via local HTTP server with M3U playlists and natural sort
+
+### Encryption
+- [ ] **age file encryption** — encrypt/decrypt files in the SFTP/rclone browser using [age](https://age-encryption.org) (Go library via gomobile), with key management in Haven's key store
+
+### Networking
+- [ ] **WireGuard** — built-in WireGuard tunnel for self-hosted VPN (userspace Go implementation), auto-discover and connect to peers without a separate VPN app
+- [x] **Tailscale auto-discovery** — detect Tailscale peers via local API and show as discovered hosts
+
 ### Terminal depth
 - [ ] **Split panes** — horizontal/vertical splits within a tab, independent SSH sessions per pane
 - [ ] **Prompt-to-prompt navigation** — jump between commands using OSC 133 markers (infrastructure exists in termlib accessibility layer)
