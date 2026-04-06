@@ -123,4 +123,11 @@
     <string name="connections_menu_delete_group">Удалить группу</string>
     <string name="connections_new_group_action">Новая группа</string>
     <string name="connections_desktop_addons_header">Функции рабочего стола (необязательно)</string>
+    <string name="connections_menu_duplicate">Duplicate</string>
+    <string name="connections_desktops_title">Desktops</string>
+    <string name="connections_desktop_start">Start</string>
+    <string name="connections_desktop_stop">Stop</string>
+    <string name="connections_desktop_native_running">Native compositor</string>
+    <string name="connections_desktop_uninstall_title">Uninstall desktop?</string>
+    <string name="connections_desktop_uninstall_message">Uninstall %1$s? Packages will be removed from the PRoot environment.</string>
 </resources>
