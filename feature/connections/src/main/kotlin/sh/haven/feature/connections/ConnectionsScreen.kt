@@ -255,7 +255,10 @@ fun ConnectionsScreen(
 
     LaunchedEffect(error) {
         error?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = androidx.compose.material3.SnackbarDuration.Long,
+            )
             viewModel.dismissError()
         }
     }
