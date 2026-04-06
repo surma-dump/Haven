@@ -150,6 +150,21 @@ class SmbClient : Closeable {
         diskShare.mkdir(smbPath)
     }
 
+    fun rename(oldPath: String, newPath: String) {
+        val diskShare = share ?: throw IllegalStateException("Not connected")
+        val smbOld = toSmbPath(oldPath)
+        val smbNew = toSmbPath(newPath)
+        val file = diskShare.openFile(
+            smbOld,
+            EnumSet.of(AccessMask.DELETE, AccessMask.GENERIC_READ),
+            null,
+            SMB2ShareAccess.ALL,
+            SMB2CreateDisposition.FILE_OPEN,
+            null,
+        )
+        file.use { it.rename(smbNew) }
+    }
+
     override fun close() {
         try { share?.close() } catch (_: Exception) {}
         try { session?.close() } catch (_: Exception) {}

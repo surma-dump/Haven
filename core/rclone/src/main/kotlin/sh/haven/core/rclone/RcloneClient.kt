@@ -182,6 +182,65 @@ class RcloneClient @Inject constructor(
         )
     }
 
+    /**
+     * Move (rename) a single file within or between remotes.
+     *
+     * For local paths, pass the absolute directory as the remote.
+     * For cloud remotes, pass the remote name (e.g. "gdrive").
+     */
+    fun moveFile(
+        srcRemote: String, srcPath: String,
+        dstRemote: String, dstPath: String,
+    ) {
+        val params = JSONObject()
+        params.put("srcFs", if (srcRemote.startsWith("/")) srcRemote else "$srcRemote:")
+        params.put("srcRemote", srcPath.trimStart('/'))
+        params.put("dstFs", if (dstRemote.startsWith("/")) dstRemote else "$dstRemote:")
+        params.put("dstRemote", dstPath.trimStart('/'))
+        rpc("operations/movefile", params)
+    }
+
+    /** Generate a public link for a file or directory. */
+    fun publicLink(remote: String, path: String): String {
+        val params = JSONObject()
+        params.put("fs", "$remote:")
+        params.put("remote", path.trimStart('/'))
+        val result = rpc("operations/publiclink", params)
+        return result.getString("url")
+    }
+
+    /** Calculate total size of a directory tree. */
+    fun directorySize(remote: String, path: String): DirectorySize {
+        val params = JSONObject()
+        params.put("fs", "$remote:")
+        params.put("remote", path.trimStart('/'))
+        val result = rpc("operations/size", params)
+        return DirectorySize(
+            count = result.optLong("count", 0),
+            bytes = result.optLong("bytes", 0),
+        )
+    }
+
+    // ── Remote capabilities ────────────────────────────────────────────
+
+    private val capabilitiesCache = mutableMapOf<String, RemoteCapabilities>()
+
+    /** Query what features a remote supports. Cached per remote name. */
+    fun getCapabilities(remote: String): RemoteCapabilities {
+        capabilitiesCache[remote]?.let { return it }
+        val result = rpc("operations/fsinfo", JSONObject().put("fs", "$remote:"))
+        val features = result.optJSONObject("Features") ?: return RemoteCapabilities()
+        val caps = RemoteCapabilities(
+            publicLink = features.optBoolean("PublicLink", false),
+            move = features.optBoolean("Move", false),
+            copy = features.optBoolean("Copy", false),
+            purge = features.optBoolean("Purge", false),
+            about = features.optBoolean("About", false),
+        )
+        capabilitiesCache[remote] = caps
+        return caps
+    }
+
     // ── Transfer stats ──────────────────────────────────────────────────
 
     /** Get current transfer statistics. */
@@ -319,6 +378,53 @@ class RcloneClient @Inject constructor(
     fun stopMediaServer() {
         if (!initialized) return
         RcloneBridge.stopMediaServer()
+    }
+
+    // ── DLNA server ──────────────────────────────────────────────────
+
+    @Volatile
+    var activeDlnaServerId: String? = null
+
+    /**
+     * Start a DLNA media server for the given remote.
+     * Requires the `cmd/serve/dlna` import in the Go bridge.
+     * Returns the server ID for later stopping.
+     */
+    fun startDlnaServer(remote: String, friendlyName: String = "Haven"): String {
+        check(initialized) { "RcloneClient.initialize() must be called first" }
+        val params = JSONObject()
+        params.put("type", "dlna")
+        params.put("fs", "$remote:")
+        params.put("opt", JSONObject().put("name", friendlyName))
+        val result = rpc("serve/start", params)
+        val id = result.getString("id")
+        activeDlnaServerId = id
+        return id
+    }
+
+    /** Stop the DLNA media server if running. */
+    fun stopDlnaServer() {
+        val id = activeDlnaServerId ?: return
+        try {
+            rpc("serve/stop", JSONObject().put("id", id))
+        } catch (_: Exception) {
+            // Server may already be stopped
+        }
+        activeDlnaServerId = null
+    }
+
+    /** Check whether the DLNA server is still running. */
+    fun dlnaServerStatus(): Boolean {
+        val id = activeDlnaServerId ?: return false
+        return try {
+            val result = rpc("serve/list")
+            val list = result.optJSONArray("list") ?: return false
+            (0 until list.length()).any {
+                list.getJSONObject(it).optString("id") == id
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     // ── Internal ────────────────────────────────────────────────────────

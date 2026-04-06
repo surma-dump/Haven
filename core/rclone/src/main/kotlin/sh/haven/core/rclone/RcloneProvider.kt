@@ -85,6 +85,23 @@ data class ConfigOption(
     val type: String,
 )
 
+// ── Remote capabilities ─────────────────────────────────────────────
+
+/** Feature flags for a remote, from operations/fsinfo. */
+data class RemoteCapabilities(
+    val publicLink: Boolean = false,
+    val move: Boolean = false,
+    val copy: Boolean = false,
+    val purge: Boolean = false,
+    val about: Boolean = false,
+)
+
+/** Size of a directory tree, from operations/size. */
+data class DirectorySize(
+    val count: Long,
+    val bytes: Long,
+)
+
 // ── Sync operations ─────────────────────────────────────────────────
 
 enum class SyncMode(val rcMethod: String, val label: String) {

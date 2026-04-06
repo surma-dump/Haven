@@ -121,4 +121,20 @@
     <string name="sftp_replace_all">Replace All</string>
     <string name="sftp_skip">Skip</string>
     <string name="sftp_skip_all">Skip All</string>
+
+    <!-- Rename dialog -->
+    <string name="sftp_rename_title">Rename</string>
+    <string name="sftp_new_name">New name</string>
+
+    <!-- Share link -->
+    <string name="sftp_share_link">Share link</string>
+    <string name="sftp_link_copied">Link copied</string>
+
+    <!-- Folder size -->
+    <string name="sftp_folder_size">Folder size</string>
+    <string name="sftp_folder_size_title">Folder Size</string>
+
+    <!-- DLNA -->
+    <string name="sftp_start_dlna">Start DLNA server</string>
+    <string name="sftp_stop_dlna">Stop DLNA server</string>
 </resources>

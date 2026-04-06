@@ -160,6 +160,21 @@ class SftpViewModel @Inject constructor(
     private val _hasMediaFiles = MutableStateFlow(false)
     val hasMediaFiles: StateFlow<Boolean> = _hasMediaFiles.asStateFlow()
 
+    /** Feature flags for the current rclone remote. */
+    private val _remoteCapabilities = MutableStateFlow(sh.haven.core.rclone.RemoteCapabilities())
+    val remoteCapabilities: StateFlow<sh.haven.core.rclone.RemoteCapabilities> = _remoteCapabilities.asStateFlow()
+
+    /** Folder size calculation result text. */
+    private val _folderSizeResult = MutableStateFlow<String?>(null)
+    val folderSizeResult: StateFlow<String?> = _folderSizeResult.asStateFlow()
+    private val _folderSizeLoading = MutableStateFlow(false)
+    val folderSizeLoading: StateFlow<Boolean> = _folderSizeLoading.asStateFlow()
+    fun dismissFolderSize() { _folderSizeResult.value = null }
+
+    /** DLNA server state. */
+    private val _dlnaServerRunning = MutableStateFlow(false)
+    val dlnaServerRunning: StateFlow<Boolean> = _dlnaServerRunning.asStateFlow()
+
     /** Port of the running media server, or null if not running. */
     private val _mediaServerPort = MutableStateFlow<Int?>(null)
 
@@ -354,6 +369,7 @@ class SftpViewModel @Inject constructor(
         sftpChannel = null
         activeSmbClient = null
         activeRcloneRemote = null
+        _remoteCapabilities.value = sh.haven.core.rclone.RemoteCapabilities()
 
         // Restore cached state if available
         val cached = profileStateCache[profileId]
@@ -366,6 +382,12 @@ class SftpViewModel @Inject constructor(
                 isRclone -> {
                     val remoteName = rcloneSessionManager.getRemoteNameForProfile(profileId)
                     activeRcloneRemote = remoteName
+                    if (remoteName != null) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try { _remoteCapabilities.value = rcloneClient.getCapabilities(remoteName) }
+                            catch (_: Exception) { _remoteCapabilities.value = sh.haven.core.rclone.RemoteCapabilities() }
+                        }
+                    }
                 }
                 isSmb -> {
                     activeSmbClient = smbSessionManager.getClientForProfile(profileId)
@@ -608,6 +630,107 @@ class SftpViewModel @Inject constructor(
                 _error.value = "Delete failed: ${e.message}"
             } finally {
                 _loading.value = false
+            }
+        }
+    }
+
+    fun renameEntry(entry: SftpEntry, newName: String) {
+        val profileId = _activeProfileId.value ?: return
+        viewModelScope.launch {
+            try {
+                _loading.value = true
+                val parentPath = _currentPath.value
+                val newPath = if (parentPath.isEmpty() || parentPath == "/") newName
+                    else "${parentPath.trimEnd('/')}/$newName"
+                withContext(Dispatchers.IO) {
+                    if (_isRcloneProfile.value) {
+                        val remote = activeRcloneRemote ?: throw IllegalStateException("Rclone not connected")
+                        if (entry.isDirectory) {
+                            val config = SyncConfig(
+                                srcFs = "$remote:${entry.path}",
+                                dstFs = "$remote:$newPath",
+                                mode = sh.haven.core.rclone.SyncMode.MOVE,
+                            )
+                            val jobId = rcloneClient.startSync(config)
+                            while (true) {
+                                delay(200)
+                                val status = rcloneClient.getJobStatus(jobId)
+                                if (status.finished) {
+                                    if (!status.success) throw Exception(status.error ?: "Rename failed")
+                                    break
+                                }
+                            }
+                        } else {
+                            rcloneClient.moveFile(remote, entry.path, remote, newPath)
+                        }
+                    } else if (_isSmbProfile.value) {
+                        val client = activeSmbClient ?: throw IllegalStateException("SMB not connected")
+                        client.rename(entry.path, newPath)
+                    } else {
+                        val channel = getOrOpenChannel(profileId) ?: throw IllegalStateException("Not connected")
+                        channel.rename(entry.path, newPath)
+                    }
+                }
+                _message.value = "Renamed to $newName"
+                refresh()
+            } catch (e: Exception) {
+                Log.e(TAG, "Rename failed", e)
+                _error.value = "Rename failed: ${e.message}"
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    fun sharePublicLink(entry: SftpEntry) {
+        viewModelScope.launch {
+            try {
+                val remote = activeRcloneRemote ?: return@launch
+                val url = withContext(Dispatchers.IO) { rcloneClient.publicLink(remote, entry.path) }
+                val clip = android.content.ClipData.newPlainText("link", url)
+                (appContext.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                    .setPrimaryClip(clip)
+                _message.value = "Link copied"
+            } catch (e: Exception) {
+                Log.e(TAG, "Public link failed", e)
+                _error.value = "Share link not supported for this remote"
+            }
+        }
+    }
+
+    fun calculateFolderSize(entry: SftpEntry) {
+        viewModelScope.launch {
+            try {
+                _folderSizeLoading.value = true
+                val remote = activeRcloneRemote ?: return@launch
+                val size = withContext(Dispatchers.IO) { rcloneClient.directorySize(remote, entry.path) }
+                val formattedSize = android.text.format.Formatter.formatFileSize(appContext, size.bytes)
+                _folderSizeResult.value = "${entry.name}: $formattedSize (${size.count} files)"
+            } catch (e: Exception) {
+                Log.e(TAG, "Folder size failed", e)
+                _error.value = "Size calculation failed: ${e.message}"
+            } finally {
+                _folderSizeLoading.value = false
+            }
+        }
+    }
+
+    fun toggleDlnaServer() {
+        viewModelScope.launch {
+            try {
+                if (_dlnaServerRunning.value) {
+                    withContext(Dispatchers.IO) { rcloneClient.stopDlnaServer() }
+                    _dlnaServerRunning.value = false
+                    _message.value = "DLNA server stopped"
+                } else {
+                    val remote = activeRcloneRemote ?: return@launch
+                    withContext(Dispatchers.IO) { rcloneClient.startDlnaServer(remote) }
+                    _dlnaServerRunning.value = true
+                    _message.value = "DLNA server started"
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "DLNA toggle failed", e)
+                _error.value = "DLNA server failed: ${e.message}"
             }
         }
     }
@@ -1166,6 +1289,8 @@ class SftpViewModel @Inject constructor(
                         "isConnected=${rcloneSessionManager.isProfileConnected(profileId)}")
                     if (remoteName == null) throw IllegalStateException("Rclone session not connected")
                     activeRcloneRemote = remoteName
+                    try { _remoteCapabilities.value = rcloneClient.getCapabilities(remoteName) }
+                    catch (_: Exception) { _remoteCapabilities.value = sh.haven.core.rclone.RemoteCapabilities() }
                     _currentPath.value = "/"
                     loadRcloneEntries(remoteName, "")
                 }

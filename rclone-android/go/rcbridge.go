@@ -22,6 +22,7 @@ import (
 
 	// Import rclone backends and operations so their RC methods get registered.
 	_ "github.com/rclone/rclone/backend/all"
+	_ "github.com/rclone/rclone/cmd/serve/dlna"
 	_ "github.com/rclone/rclone/fs/operations"
 	_ "github.com/rclone/rclone/fs/sync"
 )

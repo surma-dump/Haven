@@ -43,6 +43,11 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.CastConnected
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -125,6 +130,12 @@ fun SftpScreen(
     val dryRunResult by viewModel.dryRunResult.collectAsState()
     val hasMediaFiles by viewModel.hasMediaFiles.collectAsState()
     val mediaExtensions by viewModel.mediaExtensionsSet.collectAsState()
+    val capabilities by viewModel.remoteCapabilities.collectAsState()
+    val folderSizeResult by viewModel.folderSizeResult.collectAsState()
+    val folderSizeLoading by viewModel.folderSizeLoading.collectAsState()
+    val dlnaRunning by viewModel.dlnaServerRunning.collectAsState()
+
+    var showRenameDialog by remember { mutableStateOf<SftpEntry?>(null) }
 
     LaunchedEffect(pendingSmbProfileId) {
         pendingSmbProfileId?.let { viewModel.setPendingSmbProfile(it) }
@@ -350,6 +361,18 @@ fun SftpScreen(
                                     viewModel.showSyncDialog()
                                 }) {
                                     Icon(Icons.Filled.Sync, stringResource(R.string.sftp_sync))
+                                }
+                                SmallFloatingActionButton(onClick = {
+                                    fabExpanded = false
+                                    viewModel.toggleDlnaServer()
+                                }) {
+                                    Icon(
+                                        if (dlnaRunning) Icons.Filled.Stop else Icons.Filled.CastConnected,
+                                        stringResource(
+                                            if (dlnaRunning) R.string.sftp_stop_dlna
+                                            else R.string.sftp_start_dlna
+                                        ),
+                                    )
                                 }
                             }
                         }
@@ -599,6 +622,13 @@ fun SftpScreen(
                                 onSync = if (isRclone && entry.isDirectory) {
                                     { viewModel.showSyncDialog(entry.path) }
                                 } else null,
+                                onRename = { showRenameDialog = entry },
+                                onShareLink = if (isRclone && capabilities.publicLink) {
+                                    { viewModel.sharePublicLink(entry) }
+                                } else null,
+                                onFolderSize = if (isRclone && entry.isDirectory) {
+                                    { viewModel.calculateFolderSize(entry) }
+                                } else null,
                             )
                         }
                     }
@@ -684,6 +714,50 @@ fun SftpScreen(
             text = { Text(result) },
             confirmButton = {
                 TextButton(onClick = { viewModel.dismissDryRunResult() }) {
+                    Text(stringResource(R.string.common_ok))
+                }
+            },
+        )
+    }
+
+    // Rename dialog
+    showRenameDialog?.let { entry ->
+        var newName by remember(entry) { mutableStateOf(entry.name) }
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = null },
+            title = { Text(stringResource(R.string.sftp_rename_title)) },
+            text = {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text(stringResource(R.string.sftp_new_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRenameDialog = null
+                        viewModel.renameEntry(entry, newName)
+                    },
+                    enabled = newName.isNotBlank() && newName != entry.name,
+                ) { Text(stringResource(R.string.common_rename)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = null }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+
+    // Folder size result
+    folderSizeResult?.let { result ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissFolderSize() },
+            title = { Text(stringResource(R.string.sftp_folder_size_title)) },
+            text = { Text(result) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissFolderSize() }) {
                     Text(stringResource(R.string.common_ok))
                 }
             },
@@ -908,6 +982,9 @@ private fun FileListItem(
     onCut: () -> Unit = {},
     onPlay: (() -> Unit)? = null,
     onSync: (() -> Unit)? = null,
+    onRename: () -> Unit = {},
+    onShareLink: (() -> Unit)? = null,
+    onFolderSize: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -976,10 +1053,29 @@ private fun FileListItem(
                 onClick = { showMenu = false; onCut() },
             )
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.common_rename)) },
+                leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                onClick = { showMenu = false; onRename() },
+            )
+            DropdownMenuItem(
                 text = { Text(stringResource(R.string.sftp_copy_path)) },
                 leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
                 onClick = { showMenu = false; onCopyPath() },
             )
+            if (onShareLink != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.sftp_share_link)) },
+                    leadingIcon = { Icon(Icons.Filled.Share, null) },
+                    onClick = { showMenu = false; onShareLink() },
+                )
+            }
+            if (onFolderSize != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.sftp_folder_size)) },
+                    leadingIcon = { Icon(Icons.Filled.FolderOpen, null) },
+                    onClick = { showMenu = false; onFolderSize() },
+                )
+            }
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.common_delete)) },
                 leadingIcon = { Icon(Icons.Filled.Delete, null) },
