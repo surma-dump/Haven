@@ -402,6 +402,9 @@ class ConnectionsViewModel @Inject constructor(
     val discoveredSmbHosts: StateFlow<List<DiscoveredHost>> = networkDiscovery.smbHosts
     val localVmStatus: StateFlow<LocalVmStatus> = networkDiscovery.localVm
 
+    val showLinuxVmCard: StateFlow<Boolean> = preferencesRepository.showLinuxVmCard
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     private var periodicRefreshJob: Job? = null
 
     fun startPeriodicRefresh() {

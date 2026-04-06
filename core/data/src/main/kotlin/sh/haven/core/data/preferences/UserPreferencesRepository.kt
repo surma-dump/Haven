@@ -42,6 +42,7 @@ class UserPreferencesRepository @Inject constructor(
     private val screenOrderKey = stringPreferencesKey("screen_order")
     private val waylandShellCommandKey = stringPreferencesKey("wayland_shell_command")
     private val batteryPromptDismissedKey = booleanPreferencesKey("battery_prompt_dismissed")
+    private val showLinuxVmCardKey = booleanPreferencesKey("show_linux_vm_card")
     private val mediaExtensionsKey = stringPreferencesKey("media_extensions")
     private val lastMediaServerPortKey = intPreferencesKey("last_media_server_port")
 
@@ -155,6 +156,17 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setBatteryPromptDismissed() {
         dataStore.edit { prefs ->
             prefs[batteryPromptDismissedKey] = true
+        }
+    }
+
+    /** Whether the Linux VM card is shown on the Connections screen. */
+    val showLinuxVmCard: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[showLinuxVmCardKey] ?: true
+    }
+
+    suspend fun setShowLinuxVmCard(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[showLinuxVmCardKey] = enabled
         }
     }
 

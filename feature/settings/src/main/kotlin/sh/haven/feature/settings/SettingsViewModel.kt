@@ -82,6 +82,9 @@ class SettingsViewModel @Inject constructor(
     val screenSecurity: StateFlow<Boolean> = preferencesRepository.screenSecurity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val showLinuxVmCard: StateFlow<Boolean> = preferencesRepository.showLinuxVmCard
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
     val showSearchButton: StateFlow<Boolean> = preferencesRepository.showSearchButton
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -184,6 +187,12 @@ class SettingsViewModel @Inject constructor(
     fun setScreenSecurity(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setScreenSecurity(enabled)
+        }
+    }
+
+    fun setShowLinuxVmCard(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setShowLinuxVmCard(enabled)
         }
     }
 

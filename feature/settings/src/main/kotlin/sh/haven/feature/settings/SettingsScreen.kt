@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Laptop
 import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.ContentCopy
@@ -124,6 +125,7 @@ fun SettingsScreen(
 ) {
     val biometricEnabled by viewModel.biometricEnabled.collectAsState()
     val screenSecurity by viewModel.screenSecurity.collectAsState()
+    val showLinuxVmCard by viewModel.showLinuxVmCard.collectAsState()
     val lockTimeout by viewModel.lockTimeout.collectAsState()
     val fontSize by viewModel.terminalFontSize.collectAsState()
     val theme by viewModel.theme.collectAsState()
@@ -228,6 +230,13 @@ fun SettingsScreen(
             subtitle = stringResource(R.string.settings_prevent_screenshots_subtitle),
             checked = screenSecurity,
             onCheckedChange = viewModel::setScreenSecurity,
+        )
+        SettingsToggleItem(
+            icon = Icons.Filled.Laptop,
+            title = stringResource(R.string.settings_show_linux_vm_title),
+            subtitle = stringResource(R.string.settings_show_linux_vm_subtitle),
+            checked = showLinuxVmCard,
+            onCheckedChange = viewModel::setShowLinuxVmCard,
         )
         SettingsToggleItem(
             icon = Icons.Filled.History,

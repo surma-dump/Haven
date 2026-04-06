@@ -163,6 +163,7 @@ fun ConnectionsScreen(
     val discoveredDestinations by viewModel.discoveredDestinations.collectAsState()
     val discoveredHosts by viewModel.discoveredHosts.collectAsState()
     val localVmStatus by viewModel.localVmStatus.collectAsState()
+    val showLinuxVmCard by viewModel.showLinuxVmCard.collectAsState()
     val connectingProfileId by viewModel.connectingProfileId.collectAsState()
     val launchingDesktop by viewModel.launchingDesktop.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -724,8 +725,8 @@ fun ConnectionsScreen(
                 )
             }
 
-            // Linux VM card — shown when Terminal app is installed
-            if (localVmStatus.terminalAppInstalled) {
+            // Linux VM card — shown when Terminal app is installed and not hidden in settings
+            if (showLinuxVmCard && localVmStatus.terminalAppInstalled) {
                 LinuxVmCard(
                     vmStatus = localVmStatus,
                     onClick = { showVmSetup = true },
