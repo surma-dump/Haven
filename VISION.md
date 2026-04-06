@@ -15,7 +15,7 @@ The GPL/privacy audience chooses Haven *because* it's open source. Every securit
 Three concentric circles, in priority order:
 
 1. **Terminal via VPN to workstation** — SSH, session persistence (tmux/zellij), reliable reconnect with session restore. Running Claude Code, development tools, system administration.
-2. **File management across boundaries** — SFTP, SMB, and 60+ cloud providers (Google Drive, Dropbox, S3, OneDrive, etc.) in a unified browser. Cross-filesystem copy/move between any combination.
+2. **File management across boundaries** — SFTP, SMB, and 60+ cloud providers (Google Drive, Dropbox, S3, OneDrive, etc.) in a unified browser. Cross-filesystem copy/move between any combination. Media tools (ffmpeg) let you convert, compress, trim, and extract audio without leaving the file browser — turning Haven into a mobile media workstation that operates on files wherever they live.
 3. **Remote graphical desktop** — VNC/RDP to remote machines.
 4. **Native local desktop** — GPU-accelerated Wayland compositor with window management, keyboard, mouse, zoom, fullscreen. A real Linux desktop on your phone.
 5. **Local PRoot development** — portable Linux environment on the phone itself.
@@ -83,7 +83,7 @@ Split panes, scrollback search, and session persistence are provided by tmux/zel
 
 - **Terminal split panes / scrollback search** — provided by session managers (tmux, zellij, screen). Reimplementing these in Haven would duplicate functionality and conflict with the session managers users already rely on.
 - **More cloud provider-specific features** — rclone handles the abstraction. Don't build Google Drive-specific sharing or Dropbox-specific versioning. Let rclone be the backend.
-- **File editing** — building an editor inside Haven is a rabbit hole. Make PRoot's vim/nano work well and focus on file transfer.
+- **File editing** — building an editor inside Haven is a rabbit hole. Make PRoot's vim/nano work well and focus on file transfer and media operations.
 - **Collaboration features** — shared sessions, screen sharing. Out of scope for a single-developer GPL project.
 - **Tablet/ChromeOS optimization** — get the phone experience perfect first.
 
@@ -91,4 +91,4 @@ Split panes, scrollback search, and session persistence are provided by tmux/zel
 
 A public library succeeds not by having every book, but by having the right books, organized well, in a building that's pleasant to be in. Haven's "books" (protocols) are sufficient. The work now is in the "organization" (workflow continuity, workspaces, connection groups) and the "building" (touch interface polish, gesture reliability). The PRoot environment is the maker space in the basement — unique, powerful, and the reason some people choose this library over any other.
 
-**Connect the workflows, keep the security story clean, polish the touch layer.** Width is sufficient. Depth is the opportunity. The native Wayland compositor opens a new axis — Haven evolves from a thin client into a portable OS environment where terminal, desktop, and file management are unified.
+**Connect the workflows, keep the security story clean, polish the touch layer.** Width is sufficient. Depth is the opportunity. The native Wayland compositor opens a new axis — Haven evolves from a thin client into a portable OS environment where terminal, desktop, and file management are unified. The file browser becomes an action surface: not just browsing and transferring, but operating on files — converting media, sharing links, streaming to devices, encrypting for privacy — wherever those files live.

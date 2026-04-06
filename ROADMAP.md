@@ -65,6 +65,9 @@
 - [ ] **rclone bisync** — two-way sync with change detection for keeping folders in lockstep
 - [x] **Media streaming** — stream audio/video from rclone remotes to VLC/any player via local HTTP server with M3U playlists and natural sort
 
+### Media tools
+- [ ] **ffmpeg integration** — video/audio conversion, compression, audio extraction, trimming, and merging via [ffmpeg-kit](https://github.com/arthenica/ffmpeg-kit) with a task-based GUI in the file browser. Long-press a media file to convert, compress, extract audio, or trim. Works on local files, SFTP, SMB, and rclone remotes. Presets for common operations (compress for sharing, extract MP3, re-encode for compatibility) plus advanced options for power users.
+
 ### Encryption
 - [ ] **age file encryption** — encrypt/decrypt files in the SFTP/rclone browser using [age](https://age-encryption.org) (Go library via gomobile), with key management in Haven's key store
 
