@@ -698,14 +698,19 @@ class SftpViewModel @Inject constructor(
         }
     }
 
+    private var folderSizeJob: kotlinx.coroutines.Job? = null
+
     fun calculateFolderSize(entry: SftpEntry) {
-        viewModelScope.launch {
+        folderSizeJob?.cancel()
+        folderSizeJob = viewModelScope.launch {
             try {
                 _folderSizeLoading.value = true
                 val remote = activeRcloneRemote ?: return@launch
                 val size = withContext(Dispatchers.IO) { rcloneClient.directorySize(remote, entry.path) }
                 val formattedSize = android.text.format.Formatter.formatFileSize(appContext, size.bytes)
                 _folderSizeResult.value = "${entry.name}: $formattedSize (${size.count} files)"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // User cancelled
             } catch (e: Exception) {
                 Log.e(TAG, "Folder size failed", e)
                 _error.value = "Size calculation failed: ${e.message}"
@@ -713,6 +718,12 @@ class SftpViewModel @Inject constructor(
                 _folderSizeLoading.value = false
             }
         }
+    }
+
+    fun cancelFolderSize() {
+        folderSizeJob?.cancel()
+        folderSizeJob = null
+        _folderSizeLoading.value = false
     }
 
     fun toggleDlnaServer() {

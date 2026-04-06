@@ -209,16 +209,31 @@ class RcloneClient @Inject constructor(
         return result.getString("url")
     }
 
-    /** Calculate total size of a directory tree. */
+    /**
+     * Calculate total size of a directory tree.
+     *
+     * Uses operations/list with recurse + filesOnly + stripped metadata instead of
+     * operations/size, which can be very slow on some backends due to per-file stat calls.
+     * Also enables fast-list (UseListR) for backends that support single-call recursive listing.
+     */
     fun directorySize(remote: String, path: String): DirectorySize {
         val params = JSONObject()
         params.put("fs", "$remote:")
         params.put("remote", path.trimStart('/'))
-        val result = rpc("operations/size", params)
-        return DirectorySize(
-            count = result.optLong("count", 0),
-            bytes = result.optLong("bytes", 0),
-        )
+        params.put("opt", JSONObject().apply {
+            put("recurse", true)
+            put("filesOnly", true)
+            put("noModTime", true)
+            put("noMimeType", true)
+        })
+        params.put("_config", JSONObject().put("UseListR", true))
+        val result = rpc("operations/list", params)
+        val list = result.optJSONArray("list") ?: return DirectorySize(0, 0)
+        var totalBytes = 0L
+        for (i in 0 until list.length()) {
+            totalBytes += list.getJSONObject(i).optLong("Size", 0)
+        }
+        return DirectorySize(count = list.length().toLong(), bytes = totalBytes)
     }
 
     // ── Remote capabilities ────────────────────────────────────────────

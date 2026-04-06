@@ -750,6 +750,29 @@ fun SftpScreen(
         )
     }
 
+    // Folder size loading
+    if (folderSizeLoading) {
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelFolderSize() },
+            title = { Text(stringResource(R.string.sftp_folder_size_title)) },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Text(stringResource(R.string.sftp_calculating_size))
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelFolderSize() }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
     // Folder size result
     folderSizeResult?.let { result ->
         AlertDialog(
