@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import sh.haven.core.security.CredentialEncryption
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -82,40 +83,19 @@ class ProotManager @Inject constructor(
         /** Hidden DEs are not shown in the Desktop Manager UI. */
         val hidden: Boolean = false,
     ) {
-        XFCE4(
-            label = "Xfce4",
-            packages = "tigervnc xfce4 xfce4-terminal dbus-x11 font-noto",
-            verifyBinary = "usr/bin/startxfce4",
-            startCommands = "xfwm4 & xfce4-panel & xfdesktop &",
-            sizeEstimate = "~100MB",
-        ),
         OPENBOX(
-            label = "Openbox",
+            label = "Openbox (VNC)",
             packages = "tigervnc openbox xterm xsetroot font-noto",
             verifyBinary = "usr/bin/openbox",
             startCommands = "xsetroot -solid '#2e3440'; openbox & xterm &",
             sizeEstimate = "~10MB",
         ),
-        LABWC(
-            label = "Labwc (Wayland)",
-            packages = "labwc wayvnc foot font-noto",
-            verifyBinary = "usr/bin/labwc",
-            hidden = true,
-            startCommands = "export XDG_RUNTIME_DIR=/tmp/xdg-runtime; " +
-                "mkdir -p \$XDG_RUNTIME_DIR; " +
-                "rm -f \$XDG_RUNTIME_DIR/wayland-0 \$XDG_RUNTIME_DIR/wayland-0.lock; " +
-                "export WLR_BACKENDS=headless; " +
-                "export WLR_RENDERER=pixman; " +
-                "export WLR_LIBINPUT_NO_DEVICES=1; " +
-                "export WLR_SHM_DIR=/tmp; " +
-                "export LIBSEAT_BACKEND=noop; " +
-                "labwc 2>&1 & " +
-                "i=0; while [ ! -e \$XDG_RUNTIME_DIR/wayland-0 ] && [ \$i -lt 10 ]; do sleep 1; i=\$((i+1)); done; " +
-                "export WAYLAND_DISPLAY=wayland-0; " +
-                "wayvnc 0.0.0.0 5901 2>&1 & " +
-                "foot 2>&1 &",
-            sizeEstimate = "~15MB",
-            isWayland = true,
+        XFCE4(
+            label = "Xfce4 (VNC)",
+            packages = "tigervnc xfce4 xfce4-terminal dbus-x11 font-noto",
+            verifyBinary = "usr/bin/startxfce4",
+            startCommands = "xfwm4 & xfce4-panel & xfdesktop &",
+            sizeEstimate = "~100MB",
         ),
         WAYLAND_NATIVE(
             label = "Native Wayland",
@@ -123,7 +103,7 @@ class ProotManager @Inject constructor(
                 "xkeyboard-config xwayland mesa-dri-gallium mesa-gbm mesa-gl " +
                 "waybar fuzzel xfce4-terminal thunar mousepad htop dbus-x11",
             verifyBinary = "usr/bin/foot",
-            startCommands = "", // compositor runs natively via WaylandBridge, not in PRoot
+            startCommands = "",
             sizeEstimate = "~80MB",
             isWayland = true,
             isNative = true,
@@ -139,8 +119,8 @@ class ProotManager @Inject constructor(
         PANEL(
             label = "Panel",
             description = "Taskbar with clock and app launcher",
-            packages = "waybar fuzzel dbus",
-            sizeEstimate = "~25MB",
+            packages = "waybar fuzzel dbus font-awesome font-noto adwaita-icon-theme",
+            sizeEstimate = "~40MB",
         ),
         FILE_MANAGER(
             label = "File Manager",
@@ -157,14 +137,8 @@ class ProotManager @Inject constructor(
         STARTER_PACK(
             label = "Starter Pack",
             description = "Panel + file manager + editor + terminal + browser + calculator",
-            packages = "waybar fuzzel dbus thunar mousepad foot firefox gnome-calculator imv font-noto-emoji adwaita-icon-theme",
+            packages = "waybar fuzzel dbus thunar mousepad foot firefox gnome-calculator imv font-noto-emoji adwaita-icon-theme font-awesome",
             sizeEstimate = "~120MB",
-        ),
-        VNC_DESKTOP(
-            label = "VNC Desktop",
-            description = "Xfce4 + VNC server — access PRoot desktop from Haven's Desktop tab",
-            packages = "tigervnc xfce4 xfce4-terminal dbus-x11",
-            sizeEstimate = "~100MB",
         ),
     }
 
@@ -180,15 +154,26 @@ class ProotManager @Inject constructor(
             } catch (_: Exception) { emptySet() }
         }
 
-    /** Stored VNC password for desktop viewer. */
+    /** Stored VNC password for desktop viewer (encrypted at rest via Tink/Android Keystore). */
     var storedVncPassword: String?
         get() {
             val file = File(rootfsDir, "root/.haven-vnc-password")
-            return if (file.exists()) file.readText().trim().ifEmpty { null } else null
+            if (!file.exists()) return null
+            val stored = file.readText().trim().ifEmpty { return null }
+            return try {
+                CredentialEncryption.decrypt(context, stored)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to decrypt VNC password, treating as legacy plaintext", e)
+                stored
+            }
         }
         set(value) {
             val file = File(rootfsDir, "root/.haven-vnc-password")
-            if (value != null) file.writeText(value) else file.delete()
+            if (value != null) {
+                file.writeText(CredentialEncryption.encrypt(context, value))
+            } else {
+                file.delete()
+            }
         }
 
     /** All installed DEs — detected by checking verifyBinary on filesystem. */
@@ -561,17 +546,23 @@ class ProotManager @Inject constructor(
             if (!de.isWayland) {
                 _desktopState.value = DesktopSetupState.Installing("Configuring VNC...")
 
-                // Write VNC password
+                // Write VNC password — use a temp file to avoid leaking
+                // the password in process arguments (visible in /proc)
                 runCommandInProot("mkdir -p /root/.vnc")
                 if (vncPassword.isNotEmpty()) {
+                    val tmpPwd = File(rootfsDir, "root/.vnc/.pwd_tmp")
+                    try {
+                        tmpPwd.writeText(vncPassword)
+                    } finally { /* deleted below after use */ }
                     val (pwdOut, pwdExit) = runCommandInProot(
-                        "echo '$vncPassword' | vncpasswd -f > /root/.vnc/passwd && chmod 600 /root/.vnc/passwd"
+                        "vncpasswd -f < /root/.vnc/.pwd_tmp > /root/.vnc/passwd && chmod 600 /root/.vnc/passwd; rm -f /root/.vnc/.pwd_tmp"
                     )
+                    tmpPwd.delete() // also delete from host side
                     Log.d(TAG, "vncpasswd exit=$pwdExit output=$pwdOut")
                     val passwdFile = File(rootfsDir, "root/.vnc/passwd")
                     Log.d(TAG, "passwd file exists=${passwdFile.exists()} size=${passwdFile.length()}")
-                    // Store plaintext for the VNC viewer to use on subsequent starts
-                    File(rootfsDir, "root/.haven-vnc-password").writeText(vncPassword)
+                    // Store encrypted for the VNC viewer to use on subsequent starts
+                    storedVncPassword = vncPassword
                 } else {
                     // No password — remove any existing passwd file so server uses None
                     File(rootfsDir, "root/.vnc/passwd").delete()
@@ -618,25 +609,6 @@ chmod +x /root/.vnc/xstartup""")
             Log.d(TAG, "addon apk install exit=$installExit output(last 300)=${installOutput.takeLast(300)}")
 
             writeDesktopConfigs()
-
-            // Configure VNC if VNC_DESKTOP addon is being installed
-            if (DesktopAddon.VNC_DESKTOP in addons) {
-                _desktopState.value = DesktopSetupState.Installing("Configuring VNC...")
-                runCommandInProot("mkdir -p /root/.vnc")
-                // Set a default VNC password
-                val (_, pwdExit) = runCommandInProot(
-                    "echo 'haven' | vncpasswd -f > /root/.vnc/passwd && chmod 600 /root/.vnc/passwd"
-                )
-                Log.d(TAG, "VNC password set (exit=$pwdExit)")
-                // Write xstartup for Xfce4
-                runCommandInProot("""cat > /root/.vnc/xstartup << 'XEOF'
-#!/bin/sh
-unset SESSION_MANAGER
-unset DBUS_SESSION_BUS_ADDRESS
-exec startxfce4
-XEOF
-chmod +x /root/.vnc/xstartup""")
-            }
 
             // Write marker
             File(rootfsDir, "root/.haven-addons")
@@ -690,7 +662,7 @@ chmod +x /root/.vnc/xstartup""")
             |{
             |    "layer": "top",
             |    "position": "bottom",
-            |    "height": 44,
+            |    "height": 26,
             |    "spacing": 0,
             |    "modules-left": [
             |        "custom/apps",
@@ -741,8 +713,8 @@ chmod +x /root/.vnc/xstartup""")
         File(root, ".config/waybar/style.css").writeText(
             """
             |* {
-            |    font-family: "Font Awesome 6 Free", "Noto Sans", sans-serif;
-            |    font-size: 15px;
+            |    font-family: "Font Awesome 6 Free", "Font Awesome 5 Free", "FontAwesome", "Noto Sans", sans-serif;
+            |    font-size: 13px;
             |    min-height: 0;
             |}
             |window#waybar {
@@ -758,7 +730,7 @@ chmod +x /root/.vnc/xstartup""")
             |    background: rgba(255, 255, 255, 0.1);
             |}
             |#custom-apps {
-            |    padding: 0 14px;
+            |    padding: 0 8px;
             |    font-weight: bold;
             |    background-color: rgba(94, 129, 172, 0.3);
             |    border-right: 1px solid rgba(100, 114, 125, 0.3);
@@ -777,7 +749,7 @@ chmod +x /root/.vnc/xstartup""")
             |    color: #ebcb8b;
             |}
             |#clock {
-            |    padding: 0 14px;
+            |    padding: 0 8px;
             |    font-weight: bold;
             |}
             """.trimMargin()
@@ -788,11 +760,25 @@ chmod +x /root/.vnc/xstartup""")
         File(root, ".config/fuzzel/fuzzel.ini").writeText(
             """
             |[main]
-            |font=Noto Sans:size=14
-            |width=40
+            |font=Noto Sans:size=11
+            |width=30
             |lines=15
             |prompt=>
+            |layer=overlay
             |launch-prefix=/usr/local/bin/launch
+            """.trimMargin()
+        )
+
+        // foot terminal config — no title bar (SSD wastes space on mobile)
+        File(root, ".config/foot").mkdirs()
+        File(root, ".config/foot/foot.ini").writeText(
+            """
+            |[main]
+            |font=monospace:size=11
+            |pad=2x2
+            |
+            |[csd]
+            |preferred=none
             """.trimMargin()
         )
 

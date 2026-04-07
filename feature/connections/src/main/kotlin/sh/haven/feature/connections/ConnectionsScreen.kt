@@ -916,6 +916,7 @@ fun ConnectionsScreen(
                             DesktopManagerSection(
                                 installedDesktops = viewModel.installedDesktops,
                                 desktopStates = desktopStates,
+                                desktopSetupState = desktopSetupState,
                                 onInstall = { de -> setupDesktopDe = de },
                                 onStart = { de -> viewModel.startDesktop(de) },
                                 onStop = { de -> viewModel.stopDesktop(de) },
@@ -1641,6 +1642,7 @@ private fun LinuxVmCard(
 private fun DesktopManagerSection(
     installedDesktops: Set<sh.haven.core.local.ProotManager.DesktopEnvironment>,
     desktopStates: Map<sh.haven.core.local.ProotManager.DesktopEnvironment, sh.haven.core.local.DesktopManager.DesktopInstance>,
+    desktopSetupState: sh.haven.core.local.ProotManager.DesktopSetupState,
     onInstall: (sh.haven.core.local.ProotManager.DesktopEnvironment) -> Unit,
     onStart: (sh.haven.core.local.ProotManager.DesktopEnvironment) -> Unit,
     onStop: (sh.haven.core.local.ProotManager.DesktopEnvironment) -> Unit,
@@ -1688,6 +1690,7 @@ private fun DesktopManagerSection(
                         de = de,
                         isInstalled = isInstalled,
                         instance = instance,
+                        isSetupBusy = desktopSetupState is sh.haven.core.local.ProotManager.DesktopSetupState.Installing,
                         onInstall = { onInstall(de) },
                         onStart = { onStart(de) },
                         onStop = { onStop(de) },
@@ -1704,6 +1707,7 @@ private fun DesktopRow(
     de: sh.haven.core.local.ProotManager.DesktopEnvironment,
     isInstalled: Boolean,
     instance: sh.haven.core.local.DesktopManager.DesktopInstance?,
+    isSetupBusy: Boolean = false,
     onInstall: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -1780,9 +1784,11 @@ private fun DesktopRow(
         }
 
         if (!isInstalled) {
-            TextButton(onClick = onInstall) {
+            TextButton(onClick = onInstall, enabled = !isSetupBusy) {
                 Text(stringResource(R.string.common_install))
             }
+        } else if (isSetupBusy) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
         } else {
             when (instance?.state) {
                 sh.haven.core.local.DesktopManager.DesktopState.RUNNING ->

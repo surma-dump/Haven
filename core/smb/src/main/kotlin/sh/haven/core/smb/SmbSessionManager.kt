@@ -98,7 +98,7 @@ class SmbSessionManager @Inject constructor() {
             client.close()
             _sessions.update { map ->
                 val existing = map[sessionId] ?: return@update map
-                map + (sessionId to existing.copy(status = SessionState.Status.ERROR))
+                map + (sessionId to existing.copy(status = SessionState.Status.ERROR, password = ""))
             }
             throw e
         }
@@ -107,7 +107,13 @@ class SmbSessionManager @Inject constructor() {
     fun updateStatus(sessionId: String, status: SessionState.Status) {
         _sessions.update { map ->
             val existing = map[sessionId] ?: return@update map
-            map + (sessionId to existing.copy(status = status))
+            // Clear password from memory when session is no longer active
+            val clearPwd = status == SessionState.Status.DISCONNECTED ||
+                status == SessionState.Status.ERROR
+            map + (sessionId to existing.copy(
+                status = status,
+                password = if (clearPwd) "" else existing.password,
+            ))
         }
     }
 

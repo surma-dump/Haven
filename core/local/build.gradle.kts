@@ -36,6 +36,7 @@ android {
 
 dependencies {
     implementation(project(":core:wayland"))
+    implementation(project(":core:security"))
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
     implementation(libs.hilt.android)

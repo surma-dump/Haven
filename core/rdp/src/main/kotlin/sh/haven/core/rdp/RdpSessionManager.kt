@@ -137,7 +137,13 @@ class RdpSessionManager @Inject constructor(
     fun updateStatus(sessionId: String, status: SessionState.Status) {
         _sessions.update { map ->
             val existing = map[sessionId] ?: return@update map
-            map + (sessionId to existing.copy(status = status))
+            // Clear password from memory when session is no longer active
+            val clearPwd = status == SessionState.Status.DISCONNECTED ||
+                status == SessionState.Status.ERROR
+            map + (sessionId to existing.copy(
+                status = status,
+                password = if (clearPwd) "" else existing.password,
+            ))
         }
     }
 
@@ -166,6 +172,16 @@ class RdpSessionManager @Inject constructor(
                     Log.e(TAG, "tearDown failed for ${session.sessionId}", e)
                 }
             }
+        }
+    }
+
+    fun disconnectSession(sessionId: String) {
+        _sessions.update { map ->
+            val existing = map[sessionId] ?: return@update map
+            map + (sessionId to existing.copy(
+                status = SessionState.Status.DISCONNECTED,
+                password = "",
+            ))
         }
     }
 

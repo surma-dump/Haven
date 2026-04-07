@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -171,6 +172,8 @@ fun WaylandDesktopView(
                 }
             },
     ) {
+        // Force landscape 16:10 aspect ratio — the compositor fills this
+        // exactly, so pixels remain square. Letterboxed in portrait.
         AndroidView(
             factory = { context ->
                 @SuppressLint("ClickableViewAccessibility")
