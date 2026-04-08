@@ -64,6 +64,7 @@ class BackupService @Inject constructor(
                 put("reticulumPort", p.reticulumPort)
                 put("jumpProfileId", p.jumpProfileId ?: JSONObject.NULL)
                 put("sshOptions", p.sshOptions ?: JSONObject.NULL)
+                put("moshServerCommand", p.moshServerCommand ?: JSONObject.NULL)
                 put("vncPort", p.vncPort ?: JSONObject.NULL)
                 put("vncPassword", p.vncPassword ?: JSONObject.NULL)
                 put("vncSshForward", p.vncSshForward)
@@ -251,6 +252,7 @@ class BackupService @Inject constructor(
                             reticulumPort = c.optInt("reticulumPort", 37428),
                             jumpProfileId = c.optStringOrNull("jumpProfileId"),
                             sshOptions = c.optStringOrNull("sshOptions"),
+                            moshServerCommand = c.optStringOrNull("moshServerCommand"),
                             vncPort = c.optIntOrNull("vncPort"),
                             vncPassword = c.optStringOrNull("vncPassword"),
                             vncSshForward = c.optBoolean("vncSshForward", true),

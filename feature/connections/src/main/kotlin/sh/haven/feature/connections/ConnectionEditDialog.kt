@@ -144,6 +144,7 @@ fun ConnectionEditDialog(
     var proxyPort by rememberSaveable { mutableStateOf(existing?.proxyPort?.toString() ?: "1080") }
     var keyId by rememberSaveable { mutableStateOf(existing?.keyId) }
     var sshOptions by rememberSaveable { mutableStateOf(existing?.sshOptions ?: "") }
+    var moshServerCommand by rememberSaveable { mutableStateOf(existing?.moshServerCommand ?: "") }
     var disableAltScreen by rememberSaveable { mutableStateOf(existing?.disableAltScreen ?: false) }
     var useAndroidShell by rememberSaveable { mutableStateOf(existing?.useAndroidShell ?: false) }
     var selectedSessionManager by rememberSaveable { mutableStateOf(existing?.sessionManager) }
@@ -1214,6 +1215,18 @@ fun ConnectionEditDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Spacer(Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = moshServerCommand,
+                            onValueChange = { moshServerCommand = it },
+                            label = { Text("mosh-server command") },
+                            placeholder = { Text("mosh-server new -s -c 256 -l LANG=en_US.UTF-8") },
+                            supportingText = { Text("Leave blank for default. Use authbind for ports below 1024.") },
+                            singleLine = false,
+                            minLines = 1,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                     if (selectedTransport == "ET") {
                         Spacer(Modifier.height(4.dp))
@@ -1526,6 +1539,7 @@ fun ConnectionEditDialog(
                             proxyPort = proxyPort.toIntOrNull() ?: 1080,
                             keyId = keyId,
                             sshOptions = sshOptions.ifBlank { null },
+                            moshServerCommand = moshServerCommand.ifBlank { null },
                             disableAltScreen = disableAltScreen,
                             useAndroidShell = useAndroidShell,
                             sessionManager = selectedSessionManager,

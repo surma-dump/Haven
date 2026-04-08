@@ -57,6 +57,8 @@ data class ConnectionProfile(
     val rcloneProvider: String? = null,
     /** Use native Android shell instead of PRoot for local connections. */
     val useAndroidShell: Boolean = false,
+    /** Custom mosh-server command (overrides the default `mosh-server new -s -c 256 -l LANG=en_US.UTF-8`). */
+    val moshServerCommand: String? = null,
 ) {
     enum class AuthType {
         PASSWORD,

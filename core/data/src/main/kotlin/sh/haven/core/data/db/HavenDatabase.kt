@@ -20,7 +20,7 @@ import sh.haven.core.data.db.entities.SshKey
         SshKey::class,
         PortForwardRule::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -229,6 +229,12 @@ abstract class HavenDatabase : RoomDatabase() {
         val MIGRATION_25_26 = object : Migration(25, 26) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE connection_profiles ADD COLUMN useAndroidShell INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE connection_profiles ADD COLUMN moshServerCommand TEXT")
             }
         }
     }

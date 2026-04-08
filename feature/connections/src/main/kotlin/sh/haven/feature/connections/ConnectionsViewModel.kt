@@ -1940,7 +1940,8 @@ class ConnectionsViewModel @Inject constructor(
         verboseLogger: SshVerboseLogger? = null,
     ) {
         val moshConnect = withContext(Dispatchers.IO) {
-            val moshCmd = "mosh-server new -s -c 256 -l LANG=en_US.UTF-8"
+            val customMoshCmd = repository.getById(profileId)?.moshServerCommand?.takeIf { it.isNotBlank() }
+            val moshCmd = customMoshCmd ?: "mosh-server new -s -c 256 -l LANG=en_US.UTF-8"
             Log.d(TAG, "Running mosh-server bootstrap: $moshCmd")
             val result = client.execCommand(moshCmd)
 
