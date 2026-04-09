@@ -135,7 +135,10 @@ class SshClient : Closeable {
         val sess = session ?: throw IllegalStateException("Not connected")
         val channel = sess.openChannel("shell") as ChannelShell
         channel.setPtyType(term, cols, rows, 0, 0)
-        if (agentForwardingEnabled) channel.setAgentForwarding(true)
+        if (agentForwardingEnabled) {
+            channel.setAgentForwarding(true)
+            diag("Shell channel opened with agent forwarding enabled")
+        }
         channel.connect()
         return channel
     }
@@ -166,7 +169,10 @@ class SshClient : Closeable {
         val sess = session ?: throw IllegalStateException("Not connected")
         val channel = sess.openChannel("exec") as ChannelExec
         channel.setCommand(command)
-        if (agentForwardingEnabled) channel.setAgentForwarding(true)
+        if (agentForwardingEnabled) {
+            channel.setAgentForwarding(true)
+            diag("Exec channel opened with agent forwarding enabled: ${command.take(64)}")
+        }
         channel.inputStream = null
 
         val stdout = channel.inputStream
@@ -254,6 +260,18 @@ class SshClient : Closeable {
     }
 
     /**
+     * Log a line to Android logcat *and* the JSch verbose logger so the line
+     * is captured in the per-connection verbose log that ships with the
+     * Connection Log entry when users enable "Verbose SSH logging". This is
+     * how we make agent-forwarding diagnostics visible to end users who want
+     * to share logs via the connection log viewer.
+     */
+    private fun diag(message: String) {
+        Log.d(TAG, message)
+        verboseLogger?.log(com.jcraft.jsch.Logger.INFO, "[haven/agent] $message")
+    }
+
+    /**
      * Enable agent forwarding for this session and add the configured identities to the
      * JSch-wide identity repository so JSch's ChannelAgentForwarding can answer forwarded
      * SSH_AGENTC_REQUEST_IDENTITIES / SIGN_REQUEST messages from the remote.
@@ -261,20 +279,69 @@ class SshClient : Closeable {
      * Must be called AFTER [Session.connect] so the identities are never tried as
      * candidate keys during public-key auth — otherwise a profile with many stored keys
      * could trip `MaxAuthTries` and be rejected with "Too many authentication failures".
+     *
+     * Emits diagnostic lines via [diag] so enabling Verbose SSH logging gives
+     * users enough detail to file meaningful bug reports about forwarded-agent
+     * behaviour (see #75 thread).
      */
     private fun registerAgentIdentities(config: ConnectionConfig) {
         agentForwardingEnabled = config.forwardAgent
-        if (!config.forwardAgent) return
-        if (config.agentIdentities.isEmpty()) {
-            Log.w(TAG, "Agent forwarding requested but no identities supplied — forwarded agent will be empty")
+        if (!config.forwardAgent) {
+            diag("forwardAgent=false — not registering any agent identities")
             return
         }
+        if (config.agentIdentities.isEmpty()) {
+            diag(
+                "forwardAgent=true but agentIdentities is empty — the forwarded " +
+                    "agent channel will expose no keys. Typical cause: all stored " +
+                    "SSH keys are passphrase-protected and were filtered out by " +
+                    "the caller (ConnectionsViewModel.agentIdentitiesFor)."
+            )
+            // Log which identities are currently in JSch's repo (these came from
+            // the primary auth step earlier in connect()). JSch's
+            // ChannelAgentForwarding exposes THE ENTIRE repo over the forwarded
+            // channel, so even with agentIdentities empty these primary-auth
+            // identities may still be reachable from the remote.
+            logJschIdentityRepo()
+            return
+        }
+        var registered = 0
+        var skipped = 0
         config.agentIdentities.forEachIndexed { i, (label, keyBytes) ->
             try {
                 jsch.addIdentity("haven-agent-$i-$label", keyBytes, null, null)
+                registered++
+                diag("Registered agent identity #$i '$label' (${keyBytes.size} bytes)")
             } catch (e: Exception) {
-                Log.w(TAG, "Skipping agent key '$label' — could not parse: ${e.message}")
+                skipped++
+                diag("Skipped agent identity #$i '$label' — ${e.javaClass.simpleName}: ${e.message}")
             }
+        }
+        diag("Agent identities: $registered registered, $skipped skipped, ${config.agentIdentities.size} requested")
+        logJschIdentityRepo()
+    }
+
+    /**
+     * Dump the names of every identity currently in JSch's repository.
+     * ChannelAgentForwarding answers SSH_AGENTC_REQUEST_IDENTITIES with the
+     * full repo contents, so this is what the remote will actually see over
+     * the forwarded agent socket. Useful for diagnosing cases where
+     * `ssh-add -l` on the remote returns something different from what the
+     * user configured under the "Forward SSH agent" toggle.
+     */
+    private fun logJschIdentityRepo() {
+        try {
+            val names = jsch.identityNames
+            if (names.isEmpty()) {
+                diag("JSch identity repo: EMPTY — forwarded agent will report no keys")
+            } else {
+                diag("JSch identity repo (${names.size} entries, will be exposed over forwarded agent):")
+                for ((i, name) in names.withIndex()) {
+                    diag("  [$i] $name")
+                }
+            }
+        } catch (e: Throwable) {
+            diag("Could not read JSch identity repo: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 

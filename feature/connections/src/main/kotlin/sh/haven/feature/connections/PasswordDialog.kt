@@ -36,6 +36,27 @@ import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.unit.dp
 import sh.haven.core.data.db.entities.ConnectionProfile
 
+/**
+ * Intent of the password prompt — drives label, helper text, and the
+ * "leave empty to connect with SSH key" hint. Pre-fix, the dialog
+ * always showed the "leave empty" hint whenever any key was in the
+ * repository, including for profiles whose assigned key was
+ * passphrase-protected — where leaving empty produced a silent
+ * JSch decrypt failure with no hint that the entered password was
+ * being used as the key passphrase. See GlassOnTin/Haven#75
+ * (BlackDex follow-up).
+ */
+enum class PasswordDialogMode {
+    /** No key is assigned and no keys are in the repository — plain host/user password. */
+    PASSWORD_ONLY,
+    /** Keys exist but none are assigned to this profile — leaving empty will try them all. */
+    PASSWORD_OR_UNASSIGNED_KEY,
+    /** An unencrypted key is assigned — the password field is only a fallback. */
+    PASSWORD_OR_ASSIGNED_KEY,
+    /** An encrypted key is assigned — the field is the *key passphrase*, not a host password. */
+    ASSIGNED_ENCRYPTED_KEY_PASSPHRASE,
+}
+
 /** Check whether the currently active keyboard has INTERNET permission. */
 @Composable
 private fun rememberKeyboardHasInternet(): Boolean {
@@ -62,10 +83,18 @@ fun PasswordDialog(
     hasKeys: Boolean,
     onDismiss: () -> Unit,
     onConnect: (password: String, rememberPassword: Boolean) -> Unit,
+    mode: PasswordDialogMode = if (hasKeys) PasswordDialogMode.PASSWORD_OR_UNASSIGNED_KEY
+        else PasswordDialogMode.PASSWORD_ONLY,
+    assignedKeyLabel: String? = null,
 ) {
     var password by remember { mutableStateOf("") }
     var rememberPassword by remember { mutableStateOf(!profile.sshPassword.isNullOrBlank()) }
     val keyboardHasInternet = rememberKeyboardHasInternet()
+
+    val fieldLabel = when (mode) {
+        PasswordDialogMode.ASSIGNED_ENCRYPTED_KEY_PASSPHRASE -> "Key passphrase"
+        else -> "Password"
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -109,10 +138,18 @@ fun PasswordDialog(
                     }
                     else -> Text("${profile.username}@${profile.host}:${profile.port}")
                 }
+                if (mode == PasswordDialogMode.ASSIGNED_ENCRYPTED_KEY_PASSPHRASE && assignedKeyLabel != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Enter the passphrase for SSH key \"$assignedKeyLabel\".",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(fieldLabel) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(
@@ -135,12 +172,26 @@ fun PasswordDialog(
                             onCheckedChange = { rememberPassword = it },
                         )
                         Text(
-                            "Remember password",
+                            // When the field holds a key passphrase the
+                            // checkbox label should say so too — otherwise
+                            // users think they're caching a host password.
+                            if (mode == PasswordDialogMode.ASSIGNED_ENCRYPTED_KEY_PASSPHRASE) {
+                                "Remember key passphrase"
+                            } else {
+                                "Remember password"
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
-                if (hasKeys && profile.isSsh) {
+                // Only show the "leave empty" hint when leaving empty will
+                // actually work — i.e. no key is assigned (so Haven will try
+                // every unencrypted key in the repository). For profiles with
+                // an assigned encrypted key, leaving empty produces a silent
+                // JSch decrypt failure; for profiles with an assigned
+                // unencrypted key the dialog would not normally be shown in
+                // the first place. See #75 follow-up.
+                if (mode == PasswordDialogMode.PASSWORD_OR_UNASSIGNED_KEY && profile.isSsh) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         "Leave empty to connect with SSH key",

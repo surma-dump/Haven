@@ -512,9 +512,22 @@ fun ConnectionsScreen(
     }
 
     connectingProfile?.let { profile ->
+        val assignedKey = profile.keyId?.let { id -> sshKeys.firstOrNull { it.id == id } }
+        val mode = when {
+            assignedKey != null && assignedKey.isEncrypted ->
+                PasswordDialogMode.ASSIGNED_ENCRYPTED_KEY_PASSPHRASE
+            assignedKey != null ->
+                PasswordDialogMode.PASSWORD_OR_ASSIGNED_KEY
+            sshKeys.isNotEmpty() ->
+                PasswordDialogMode.PASSWORD_OR_UNASSIGNED_KEY
+            else ->
+                PasswordDialogMode.PASSWORD_ONLY
+        }
         PasswordDialog(
             profile = profile,
             hasKeys = sshKeys.isNotEmpty(),
+            mode = mode,
+            assignedKeyLabel = assignedKey?.label,
             onDismiss = { connectingProfile = null },
             onConnect = { password, rememberPassword ->
                 viewModel.connect(profile, password, rememberPassword = rememberPassword)
@@ -524,9 +537,25 @@ fun ConnectionsScreen(
     }
 
     passwordFallback?.let { profile ->
+        val assignedKey = profile.keyId?.let { id -> sshKeys.firstOrNull { it.id == id } }
+        // If the profile has an encrypted key assigned and the initial
+        // key-only connect attempt just failed, this dialog is specifically
+        // asking for the key passphrase — not a host password.
+        val mode = when {
+            assignedKey != null && assignedKey.isEncrypted ->
+                PasswordDialogMode.ASSIGNED_ENCRYPTED_KEY_PASSPHRASE
+            assignedKey != null ->
+                PasswordDialogMode.PASSWORD_OR_ASSIGNED_KEY
+            sshKeys.isNotEmpty() ->
+                PasswordDialogMode.PASSWORD_OR_UNASSIGNED_KEY
+            else ->
+                PasswordDialogMode.PASSWORD_ONLY
+        }
         PasswordDialog(
             profile = profile,
             hasKeys = sshKeys.isNotEmpty(),
+            mode = mode,
+            assignedKeyLabel = assignedKey?.label,
             onDismiss = { viewModel.dismissPasswordFallback() },
             onConnect = { password, rememberPassword ->
                 viewModel.connect(profile, password, rememberPassword = rememberPassword)
