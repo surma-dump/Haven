@@ -16,10 +16,10 @@ class ScreenTest {
     }
 
     @Test
-    fun `all screens have non-blank labels`() {
+    fun `all screens have non-zero label resource`() {
         Screen.entries.forEach { screen ->
-            assert(screen.label.isNotBlank()) {
-                "Screen ${screen.name} has blank label"
+            assert(screen.labelRes != 0) {
+                "Screen ${screen.name} has no label resource"
             }
         }
     }

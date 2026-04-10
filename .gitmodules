@@ -14,3 +14,6 @@
 [submodule "wayland-android"]
 	path = wayland-android
 	url = https://github.com/GlassOnTin/wayland-android.git
+[submodule "reticulum-kt"]
+	path = reticulum-kt
+	url = https://github.com/torlando-tech/reticulum-kt.git
