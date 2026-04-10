@@ -89,6 +89,8 @@ class DebugReceiver : BroadcastReceiver() {
             reticulumHost = intent.getStringExtra("reticulumHost") ?: "127.0.0.1",
             reticulumPort = if (intent.hasExtra("reticulumPort"))
                 intent.getIntExtra("reticulumPort", 37428) else 37428,
+            reticulumNetworkName = intent.getStringExtra("reticulumNetworkName"),
+            reticulumPassphrase = intent.getStringExtra("reticulumPassphrase"),
         )
 
         val pendingResult = goAsync()
