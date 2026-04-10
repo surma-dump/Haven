@@ -1,12 +1,12 @@
 package sh.haven.core.reticulum
 
 import android.util.Log
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.util.UUID
-import java.util.concurrent.Executors
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,10 +16,14 @@ private const val TAG = "ReticulumSessionManager"
  * Manages active Reticulum/rnsh sessions across the app.
  * Parallel to [sh.haven.core.ssh.SshSessionManager] but without
  * reconnect, SFTP, or session manager (tmux/zellij) logic.
+ *
+ * Uses the coroutines-first [ReticulumTransport] interface, which
+ * works with both the Chaquopy Python bridge and the native Kotlin
+ * rnsh-kt bridge transparently.
  */
 @Singleton
 class ReticulumSessionManager @Inject constructor(
-    private val bridge: ReticulumBridge,
+    private val transport: ReticulumTransport,
 ) {
 
     data class SessionState(
@@ -36,9 +40,9 @@ class ReticulumSessionManager @Inject constructor(
     private val _sessions = MutableStateFlow<Map<String, SessionState>>(emptyMap())
     val sessions: StateFlow<Map<String, SessionState>> = _sessions.asStateFlow()
 
-    private val ioExecutor = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "rns-session-io").apply { isDaemon = true }
-    }
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineName("rns-session-mgr")
+    )
 
     val activeSessions: List<SessionState>
         get() = _sessions.value.values.filter {
@@ -64,15 +68,13 @@ class ReticulumSessionManager @Inject constructor(
     }
 
     /**
-     * Connect a registered session. Must be called on a background thread.
-     * Initialises Reticulum if needed, resolves the destination, creates a Python session.
+     * Connect a registered session. Suspend function — call from a
+     * coroutine on Dispatchers.IO or similar.
+     *
+     * Initialises Reticulum if needed, resolves the destination, creates
+     * a shell session. Throws on failure.
      */
-    /**
-     * Connect a registered session. Must be called on a background thread.
-     * Initialises Reticulum if needed, resolves the destination, creates a Python session.
-     * Throws on failure so the caller can handle the error.
-     */
-    fun connectSession(
+    suspend fun connectSession(
         sessionId: String,
         configDir: String,
         host: String,
@@ -81,46 +83,32 @@ class ReticulumSessionManager @Inject constructor(
         val session = _sessions.value[sessionId]
             ?: throw IllegalStateException("Session $sessionId not found")
 
-        // Check for mode conflict before init
-        val isSideband = host in listOf("127.0.0.1", "localhost", "::1") && port == 37428
-        val currentMode = bridge.getInitMode()
-        if (isSideband && currentMode == "gateway") {
-            Log.e(TAG, "Mode conflict: RNS initialised as gateway, cannot switch to Sideband")
-            updateStatus(sessionId, SessionState.Status.ERROR)
-            throw RuntimeException(
-                "Cannot use Local Sideband — Reticulum was initialised in direct gateway mode. " +
-                    "Restart Haven to switch to Local Sideband."
-            )
-        }
-
-        // Always call initReticulum — it bootstraps RNS on first call
-        // and ensures a gateway interface exists for this host:port on subsequent calls.
+        // Init Reticulum (idempotent — safe to call multiple times)
         Log.w(TAG, "initReticulum: host=$host port=$port")
-        val identityHash = bridge.initReticulum(configDir, host, port)
+        val identityHash = transport.init(configDir, host, port)
         Log.w(TAG, "initReticulum OK, identity=$identityHash")
 
-        Log.w(TAG, "Resolving destination ${session.destinationHash}...")
-        val resolved = bridge.resolveDestination(session.destinationHash)
-        if (!resolved) {
-            Log.e(TAG, "Failed to resolve destination ${session.destinationHash}")
-            updateStatus(sessionId, SessionState.Status.ERROR)
-            throw RuntimeException(
-                "Could not resolve destination ${session.destinationHash}. " +
-                    if (isSideband) {
-                        "Check that Sideband is running with 'Share Reticulum Instance' enabled " +
-                            "and has interfaces with routes to this destination."
-                    } else {
-                        "Check that the gateway is reachable and the destination is announced."
-                    }
-            )
+        // Open shell session (resolves destination + Link + handshake)
+        Log.w(TAG, "Opening session to ${session.destinationHash}...")
+        val shellSession = transport.openSession(
+            destinationHash = session.destinationHash,
+        )
+
+        // Store the shell session reference for terminal wiring
+        _sessions.update { map ->
+            val existing = map[sessionId] ?: return@update map
+            map + (sessionId to existing.copy(
+                status = SessionState.Status.CONNECTED,
+            ))
         }
 
-        Log.w(TAG, "Creating rnsh session to ${session.destinationHash}...")
-        bridge.createSession(session.destinationHash, sessionId)
-
-        updateStatus(sessionId, SessionState.Status.CONNECTED)
+        // Stash the shell session so createTerminalSession can use it
+        shellSessions[sessionId] = shellSession
         Log.w(TAG, "Session $sessionId connected")
     }
+
+    // Temporary stash for shell sessions between connect and terminal creation
+    private val shellSessions = mutableMapOf<String, RnshShellSession>()
 
     /**
      * Create a [ReticulumSession] for a connected session.
@@ -134,11 +122,13 @@ class ReticulumSessionManager @Inject constructor(
         if (session.status != SessionState.Status.CONNECTED) return null
         if (session.reticulumSession != null) return null
 
+        val shellSession = shellSessions.remove(sessionId) ?: return null
+
         val reticulumSession = ReticulumSession(
             sessionId = sessionId,
             profileId = session.profileId,
             label = session.label,
-            bridge = bridge,
+            shellSession = shellSession,
             onDataReceived = onDataReceived,
             onDisconnected = { _ ->
                 Log.d(TAG, "Session $sessionId disconnected")
@@ -182,7 +172,8 @@ class ReticulumSessionManager @Inject constructor(
     fun removeSession(sessionId: String) {
         val session = _sessions.value[sessionId] ?: return
         _sessions.update { it - sessionId }
-        ioExecutor.execute {
+        shellSessions.remove(sessionId)
+        scope.launch {
             try {
                 session.reticulumSession?.close()
             } catch (e: Exception) {
@@ -194,7 +185,7 @@ class ReticulumSessionManager @Inject constructor(
     fun removeAllSessionsForProfile(profileId: String) {
         val toRemove = _sessions.value.values.filter { it.profileId == profileId }
         _sessions.update { map -> map.filterValues { it.profileId != profileId } }
-        ioExecutor.execute {
+        scope.launch {
             toRemove.forEach { session ->
                 try {
                     session.reticulumSession?.close()
@@ -208,7 +199,8 @@ class ReticulumSessionManager @Inject constructor(
     fun disconnectAll() {
         val snapshot = _sessions.value.values.toList()
         _sessions.update { emptyMap() }
-        ioExecutor.execute {
+        shellSessions.clear()
+        scope.launch {
             snapshot.forEach { session ->
                 try {
                     session.reticulumSession?.close()

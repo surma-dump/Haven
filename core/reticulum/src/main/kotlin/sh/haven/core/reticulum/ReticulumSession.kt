@@ -1,24 +1,26 @@
 package sh.haven.core.reticulum
 
 import android.util.Log
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.catch
 import java.io.Closeable
-import java.util.concurrent.Executors
-import kotlin.concurrent.thread
 
 private const val TAG = "ReticulumSession"
 
 /**
- * Bridges an rnsh session (via Python/Reticulum) to a terminal emulator.
+ * Bridges an rnsh shell session to a terminal emulator.
  *
- * Parallel to [sh.haven.core.ssh.TerminalSession] but uses the embedded
- * Python Reticulum stack instead of JSch/SSH. A reader thread polls the
- * Python output queue and delivers data via [onDataReceived].
+ * Parallel to [sh.haven.core.ssh.TerminalSession]. Consumes the
+ * [RnshShellSession] Flow-based output and delivers data via
+ * [onDataReceived]. Supports both the legacy Chaquopy bridge (via
+ * [ChaquopyReticulumTransport]) and the native Kotlin bridge (via
+ * [NativeReticulumTransport]) transparently.
  */
 class ReticulumSession(
     val sessionId: String,
     val profileId: String,
     val label: String,
-    private val bridge: ReticulumBridge,
+    private val shellSession: RnshShellSession,
     private val onDataReceived: (ByteArray, Int, Int) -> Unit,
     private val onDisconnected: ((cleanExit: Boolean) -> Unit)? = null,
 ) : Closeable {
@@ -26,49 +28,50 @@ class ReticulumSession(
     @Volatile
     private var closed = false
 
-    private var readerThread: Thread? = null
-
-    private val writeExecutor = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "rns-writer-$sessionId").apply { isDaemon = true }
-    }
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineName("rns-session-$sessionId")
+    )
 
     /**
-     * Start the reader thread that polls Python for output data.
-     * Call after the session has been created via [ReticulumBridge.createSession].
+     * Start collecting output from the shell session.
+     * Call after the session has been opened via [ReticulumTransport.openSession].
      */
     fun start() {
-        readerThread = thread(
-            name = "rns-reader-$sessionId",
-            isDaemon = true,
-        ) {
-            readLoop()
-        }
-    }
-
-    private fun readLoop() {
-        try {
-            while (!closed) {
-                val data = bridge.readOutput(sessionId, timeoutMs = 1000)
-
-                if (data == null) {
-                    // Disconnected
-                    break
+        // Collect output flow
+        scope.launch {
+            shellSession.output
+                .catch { e ->
+                    if (!closed) {
+                        Log.e(TAG, "Output flow error for $sessionId", e)
+                    }
+                }
+                .collect { data ->
+                    if (!closed && data.isNotEmpty()) {
+                        onDataReceived(data, 0, data.size)
+                    }
                 }
 
-                if (data.isNotEmpty()) {
-                    onDataReceived(data, 0, data.size)
-                }
-                // Empty data = timeout, loop again
-            }
-        } catch (e: Exception) {
+            // Flow completed — session disconnected
             if (!closed) {
-                Log.e(TAG, "readLoop exception for $sessionId", e)
+                Log.d(TAG, "Output flow ended for $sessionId")
+                onDisconnected?.invoke(true)
             }
         }
 
-        if (!closed) {
-            Log.d(TAG, "readLoop ended for $sessionId")
-            onDisconnected?.invoke(true)
+        // Watch for exit code
+        scope.launch {
+            try {
+                val code = shellSession.exitCode.await()
+                Log.d(TAG, "Session $sessionId exited with code $code")
+                if (!closed) {
+                    onDisconnected?.invoke(code == 0)
+                }
+            } catch (e: Exception) {
+                if (!closed) {
+                    Log.e(TAG, "Exit code error for $sessionId", e)
+                    onDisconnected?.invoke(false)
+                }
+            }
         }
     }
 
@@ -78,57 +81,44 @@ class ReticulumSession(
      */
     fun sendInput(data: ByteArray) {
         if (closed) return
-        val copy = data.copyOf()
-        try {
-            writeExecutor.execute {
-                if (closed) return@execute
-                try {
-                    bridge.sendInput(sessionId, copy)
-                } catch (e: Exception) {
-                    Log.e(TAG, "sendInput failed", e)
-                }
+        scope.launch {
+            try {
+                shellSession.sendInput(data)
+            } catch (e: Exception) {
+                Log.e(TAG, "sendInput failed", e)
             }
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            // Executor shut down
         }
     }
 
     fun resize(cols: Int, rows: Int) {
         if (closed) return
-        try {
-            writeExecutor.execute {
-                if (closed) return@execute
-                try {
-                    bridge.resizeSession(sessionId, cols, rows)
-                } catch (e: Exception) {
-                    Log.e(TAG, "resize failed", e)
-                }
+        scope.launch {
+            try {
+                shellSession.resize(rows, cols)
+            } catch (e: Exception) {
+                Log.e(TAG, "resize failed", e)
             }
-        } catch (_: java.util.concurrent.RejectedExecutionException) {
-            // Executor shut down
         }
     }
 
     /**
      * Detach without closing the underlying rnsh session.
-     * Stops the reader/writer but leaves the Python session alive.
+     * Stops collecting output but leaves the session alive.
      */
     fun detach() {
         if (closed) return
         closed = true
-        writeExecutor.shutdown()
-        readerThread?.interrupt()
+        scope.cancel()
     }
 
     override fun close() {
         if (closed) return
         closed = true
-        writeExecutor.shutdown()
+        scope.cancel()
         try {
-            bridge.closeSession(sessionId)
+            shellSession.close()
         } catch (e: Exception) {
             Log.e(TAG, "close failed", e)
         }
-        readerThread?.interrupt()
     }
 }
