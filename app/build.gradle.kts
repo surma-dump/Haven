@@ -105,6 +105,11 @@ dependencies {
     implementation(project(":core:security"))
     implementation(project(":core:data"))
     implementation(project(":core:reticulum"))
+
+    // Native Kotlin Reticulum transport (rnsh-kt + reticulum-kt)
+    implementation("tech.torlando:rnsh-core:0.1.0-SNAPSHOT")
+    implementation("network.reticulum:rns-core:0.1.0-SNAPSHOT")
+    implementation("network.reticulum:rns-interfaces:0.1.0-SNAPSHOT")
     implementation(project(":core:mosh"))
     implementation(project(":core:et"))
     implementation(project(":core:vnc"))
