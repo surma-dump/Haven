@@ -507,6 +507,9 @@ class SftpViewModel @Inject constructor(
         return roots
     }
 
+    /** Whether the active profile is the local filesystem. */
+    fun isLocalProfile(): Boolean = _isLocalProfile.value
+
     /** True when the local file browser needs MANAGE_EXTERNAL_STORAGE permission. */
     val needsStoragePermission: Boolean
         get() = _isLocalProfile.value &&

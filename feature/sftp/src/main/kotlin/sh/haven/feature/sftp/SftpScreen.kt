@@ -665,6 +665,27 @@ fun SftpScreen(
                                 onTap = {
                                     if (entry.isDirectory) {
                                         viewModel.navigateTo(entry.path)
+                                    } else if (viewModel.isLocalProfile()) {
+                                        // Open local file with system app
+                                        try {
+                                            val file = java.io.File(entry.path)
+                                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                context, "${context.packageName}.fileprovider", file
+                                            )
+                                            val ext = file.extension.lowercase()
+                                            val mime = android.webkit.MimeTypeMap.getSingleton()
+                                                .getMimeTypeFromExtension(ext) ?: "*/*"
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, mime)
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (_: Exception) {
+                                            scope.launch {
+                                                @Suppress("LocalContextGetResourceValueCall")
+                                                snackbarHostState.showSnackbar(context.getString(R.string.sftp_no_app_to_open))
+                                            }
+                                        }
                                     }
                                 },
                                 onDownload = {
