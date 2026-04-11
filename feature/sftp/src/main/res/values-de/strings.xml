@@ -133,4 +133,10 @@
     <!-- DLNA -->
     <string name="sftp_start_dlna">Start DLNA server</string>
     <string name="sftp_stop_dlna">Stop DLNA server</string>
+    <!-- Convert -->
+    <string name="sftp_convert">Convert</string>
+    <string name="sftp_convert_title">Convert media</string>
+    <string name="sftp_convert_format">Output format</string>
+    <string name="sftp_converting">Converting %s</string>
+    <string name="sftp_convert_done">Saved to %s</string>
 </resources>
