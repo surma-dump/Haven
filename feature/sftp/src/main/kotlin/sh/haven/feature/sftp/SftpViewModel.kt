@@ -785,6 +785,10 @@ class SftpViewModel @Inject constructor(
                 }
                 val url = "http://$ip:$port/"
                 _message.value = "Streaming on $url"
+                // Open in browser
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("http://localhost:$port/"))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                appContext.startActivity(intent)
             } catch (e: Exception) {
                 Log.e(TAG, "Stream failed", e)
                 _error.value = "Stream failed: ${e.message}"
