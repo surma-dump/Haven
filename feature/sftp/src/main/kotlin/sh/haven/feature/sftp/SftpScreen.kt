@@ -7,7 +7,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
@@ -829,6 +833,52 @@ fun SftpScreen(
                         state = filterState,
                         isAudioOnly = selectedFormat == "mp3",
                     )
+
+                    // Live CLI preview
+                    Spacer(Modifier.height(12.dp))
+                    val cliPreview = remember(
+                        selectedFormat,
+                        filterState.brightness, filterState.contrast,
+                        filterState.saturation, filterState.gamma,
+                        filterState.sharpen, filterState.denoise,
+                        filterState.stabilize, filterState.autoColor,
+                        filterState.speed, filterState.rotation,
+                        filterState.volume, filterState.normalizeAudio,
+                    ) {
+                        val inFile = entry.name
+                        val baseName = inFile.substringBeforeLast('.')
+                        val outExt = when (selectedFormat) {
+                            "h265" -> "mp4"; "vp9" -> "webm"; "mp3" -> "mp3"; else -> "mp4"
+                        }
+                        val cmd = when (selectedFormat) {
+                            "h264" -> sh.haven.core.ffmpeg.TranscodeCommand.h264("input", "output.$outExt")
+                            "h265" -> sh.haven.core.ffmpeg.TranscodeCommand.h265("input", "output.$outExt")
+                            "vp9" -> sh.haven.core.ffmpeg.TranscodeCommand.vp9("input", "output.$outExt")
+                            "mp3" -> sh.haven.core.ffmpeg.TranscodeCommand.mp3("input", "output.$outExt")
+                            else -> sh.haven.core.ffmpeg.TranscodeCommand.h264("input", "output.$outExt")
+                        }.videoFilters(filterState.buildVideoFilters())
+                            .audioFilters(filterState.buildAudioFilters())
+                        "ffmpeg " + cmd.build().joinToString(" ") { arg ->
+                            if (arg.contains(',') || arg.contains('=')) "\"$arg\"" else arg
+                        }
+                    }
+                    SelectionContainer {
+                        Text(
+                            cliPreview,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = MaterialTheme.shapes.small,
+                                )
+                                .padding(8.dp),
+                        )
+                    }
                 }
             },
             confirmButton = {
