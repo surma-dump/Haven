@@ -3,16 +3,14 @@ package sh.haven.feature.sftp
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -104,7 +102,6 @@ class FilterState {
 /**
  * Collapsible filter section for the Convert dialog.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FilterSection(state: FilterState, isAudioOnly: Boolean = false) {
     var expanded by remember { mutableStateOf(false) }
@@ -132,13 +129,15 @@ fun FilterSection(state: FilterState, isAudioOnly: Boolean = false) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 4.dp),
         ) {
             // Quick presets
             Text("Quick presets", style = MaterialTheme.typography.labelMedium)
             Spacer(Modifier.height(4.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            ) {
                 FilterPresets.all.forEach { preset ->
                     if (isAudioOnly && preset.videoFilters.isNotEmpty()) return@forEach
                     FilterChip(

@@ -75,6 +75,8 @@ data class TransferProgress(
     val fileName: String,
     val totalBytes: Long,
     val transferredBytes: Long,
+    /** When true, display as percentage rather than bytes (for ffmpeg transcode). */
+    val isPercentage: Boolean = false,
 ) {
     val fraction: Float
         get() = if (totalBytes > 0) (transferredBytes.toFloat() / totalBytes).coerceIn(0f, 1f) else 0f
@@ -591,14 +593,13 @@ class SftpViewModel @Inject constructor(
                     else -> sh.haven.core.ffmpeg.TranscodeCommand.h264(cacheInput.absolutePath, cacheOutput.absolutePath)
                 }.videoFilters(videoFilters).audioFilters(audioFilters)
 
-                _transferProgress.value = TransferProgress("Converting to $format", 100, 0)
+                _transferProgress.value = TransferProgress("Converting to $format", 100, 0, isPercentage = true)
                 val result = withContext(Dispatchers.IO) {
                     ffmpegExecutor.execute(cmd.build()) { stderrLine ->
                         val progress = sh.haven.core.ffmpeg.FfmpegProgress.parse(stderrLine)
                         if (progress != null) {
-                            // Use speed as a rough percentage hint (capped at 99%)
                             val pct = (progress.timeSeconds * 10).toLong().coerceIn(0, 99)
-                            _transferProgress.value = TransferProgress("Converting to $format", 100, pct)
+                            _transferProgress.value = TransferProgress("Converting to $format", 100, pct, isPercentage = true)
                         }
                     }
                 }

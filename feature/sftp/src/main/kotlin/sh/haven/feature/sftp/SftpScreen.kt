@@ -480,7 +480,8 @@ fun SftpScreen(
                             )
                             if (progress.totalBytes > 0) {
                                 Text(
-                                    "${Formatter.formatFileSize(context, progress.transferredBytes)} / ${Formatter.formatFileSize(context, progress.totalBytes)}",
+                                    if (progress.isPercentage) "${(progress.fraction * 100).toInt()}%"
+                                    else "${Formatter.formatFileSize(context, progress.transferredBytes)} / ${Formatter.formatFileSize(context, progress.totalBytes)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
