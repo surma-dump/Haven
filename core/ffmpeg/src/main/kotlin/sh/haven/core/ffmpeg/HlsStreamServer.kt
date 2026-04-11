@@ -59,25 +59,33 @@ class HlsStreamServer @Inject constructor(
 
         val playlistPath = File(dir, "stream.m3u8").absolutePath
 
-        // Probe input to determine if it has video
+        // Probe input to determine if it has a real video stream
+        // (exclude attached pictures like album art in FLAC/MP3)
         val probeResult = ffmpegExecutor.probe(listOf(
-            "-v", "error", "-show_entries", "stream=codec_type",
+            "-v", "error",
+            "-select_streams", "v",
+            "-show_entries", "stream=codec_type,disposition",
             "-of", "csv=p=0", inputPath,
         ))
-        val hasVideo = "video" in probeResult.stdout
+        val hasRealVideo = probeResult.stdout.lines().any {
+            it.contains("video") && !it.contains("attached")
+        }
+        Log.w(TAG, "Probe: hasRealVideo=$hasRealVideo stdout=${probeResult.stdout.take(200)}")
 
         // Start ffmpeg: transcode to HLS segments
         val args = buildList {
             add("-y")
             add("-i"); add(inputPath)
-            if (hasVideo) {
+            if (hasRealVideo) {
                 add("-c:v"); add("libx264")
                 add("-preset"); add("ultrafast")
                 add("-tune"); add("zerolatency")
+                add("-c:a"); add("aac"); add("-b:a"); add("128k")
             } else {
+                // Audio-only: drop any attached pictures
                 add("-vn")
+                add("-c:a"); add("aac"); add("-b:a"); add("128k")
             }
-            add("-c:a"); add("aac"); add("-b:a"); add("128k")
             add("-f"); add("hls")
             add("-hls_time"); add("2")
             add("-hls_list_size"); add("10")
