@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import sh.haven.core.data.db.entities.AgentAuditEvent
 import sh.haven.core.data.db.entities.ConnectionGroup
 import sh.haven.core.data.db.entities.ConnectionLog
 import sh.haven.core.data.db.entities.ConnectionProfile
@@ -19,8 +20,9 @@ import sh.haven.core.data.db.entities.SshKey
         ConnectionLog::class,
         SshKey::class,
         PortForwardRule::class,
+        AgentAuditEvent::class,
     ],
-    version = 32,
+    version = 33,
     exportSchema = true,
 )
 abstract class HavenDatabase : RoomDatabase() {
@@ -30,6 +32,7 @@ abstract class HavenDatabase : RoomDatabase() {
     abstract fun connectionLogDao(): ConnectionLogDao
     abstract fun sshKeyDao(): SshKeyDao
     abstract fun portForwardRuleDao(): PortForwardRuleDao
+    abstract fun agentAuditEventDao(): AgentAuditEventDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -266,6 +269,26 @@ abstract class HavenDatabase : RoomDatabase() {
         val MIGRATION_31_32 = object : Migration(31, 32) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE connection_profiles ADD COLUMN vncUsername TEXT")
+            }
+        }
+
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `agent_audit_events` (
+                        `id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                        `timestamp` INTEGER NOT NULL,
+                        `clientHint` TEXT,
+                        `method` TEXT NOT NULL,
+                        `toolName` TEXT,
+                        `argsJson` TEXT,
+                        `resultSummary` TEXT,
+                        `durationMs` INTEGER NOT NULL,
+                        `outcome` TEXT NOT NULL,
+                        `errorMessage` TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_agent_audit_events_timestamp` ON `agent_audit_events` (`timestamp`)")
             }
         }
     }

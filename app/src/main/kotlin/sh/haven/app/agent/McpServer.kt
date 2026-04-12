@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import sh.haven.core.data.db.entities.AgentAuditEvent
 import sh.haven.core.data.repository.ConnectionRepository
 import sh.haven.core.rclone.RcloneClient
 import sh.haven.core.ssh.SshSessionManager
@@ -70,7 +71,19 @@ class McpServer @Inject constructor(
     private val connectionRepository: ConnectionRepository,
     private val sshSessionManager: SshSessionManager,
     private val rcloneClient: RcloneClient,
+    private val auditRecorder: AgentAuditRecorder,
 ) : Closeable {
+
+    /**
+     * Last `clientInfo.name` we saw on an `initialize` request. Best
+     * effort: in the stateless transport we can't actually pin a name
+     * to a specific later call, but in practice clients open one
+     * connection and then make a small burst of requests, so the most
+     * recent hint is usually the right one. Stored separately from any
+     * per-request state so it survives across handler invocations.
+     */
+    @Volatile
+    private var lastClientHint: String? = null
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -311,15 +324,66 @@ class McpServer @Inject constructor(
         // need to return an empty 200 for the HTTP layer. Return "" for those.
         val isNotification = !req.has("id")
 
-        return try {
+        // Capture client name from `initialize` so subsequent audit
+        // rows can attribute calls to the right MCP client. Best
+        // effort: stateless transport, so this is just "the most
+        // recent name we saw."
+        if (method == "initialize") {
+            params.optJSONObject("clientInfo")?.optString("name")
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { lastClientHint = it }
+        }
+
+        val started = System.nanoTime()
+        var outcome = AgentAuditEvent.Outcome.OK
+        var errorMessage: String? = null
+        var resultJson: JSONObject? = null
+        val response = try {
             val result = dispatch(method, params)
+            if (result is JSONObject) resultJson = result
             if (isNotification) "" else jsonRpcResult(id, result)
         } catch (e: McpError) {
+            outcome = AgentAuditEvent.Outcome.ERROR
+            errorMessage = e.message
             if (isNotification) "" else jsonRpcError(id, e.code, e.message ?: "Error")
         } catch (e: Exception) {
             Log.e(TAG, "dispatch failed for method=$method", e)
+            outcome = AgentAuditEvent.Outcome.ERROR
+            errorMessage = e.message
             if (isNotification) "" else jsonRpcError(id, -32603, "Internal error: ${e.message}")
         }
+
+        // Record after responding so latency is unaffected. We skip
+        // bookkeeping notifications (`notifications/initialized`) —
+        // they carry no semantic action and would just clutter the
+        // audit view.
+        if (method != "notifications/initialized") {
+            val toolName = if (method == "tools/call") {
+                params.optString("name").takeIf { it.isNotEmpty() }
+            } else null
+            val rawArgs = if (method == "tools/call") {
+                params.optJSONObject("arguments")
+            } else if (params.length() > 0) params else null
+            // For tools/call, the structured tool output lives under
+            // `structuredContent`; the summariser wants that, not the
+            // MCP wrapper that holds `content` + `structuredContent`.
+            val resultForSummary = if (method == "tools/call") {
+                resultJson?.optJSONObject("structuredContent")
+            } else resultJson
+            val durationMs = (System.nanoTime() - started) / 1_000_000
+            auditRecorder.record(
+                method = method,
+                toolName = toolName,
+                rawArgs = rawArgs,
+                result = resultForSummary,
+                durationMs = durationMs,
+                outcome = outcome,
+                errorMessage = errorMessage,
+                clientHint = lastClientHint,
+            )
+        }
+
+        return response
     }
 
     /** Dispatch an MCP method to its handler. */
