@@ -100,6 +100,9 @@ class SettingsViewModel @Inject constructor(
     val verboseLoggingEnabled: StateFlow<Boolean> = preferencesRepository.verboseLoggingEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val mcpAgentEndpointEnabled: StateFlow<Boolean> = preferencesRepository.mcpAgentEndpointEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     val mouseInputEnabled: StateFlow<Boolean> = preferencesRepository.mouseInputEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
@@ -229,6 +232,12 @@ class SettingsViewModel @Inject constructor(
     fun setVerboseLoggingEnabled(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setVerboseLoggingEnabled(enabled)
+        }
+    }
+
+    fun setMcpAgentEndpointEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setMcpAgentEndpointEnabled(enabled)
         }
     }
 

@@ -47,6 +47,7 @@ class UserPreferencesRepository @Inject constructor(
     private val showDesktopsCardKey = booleanPreferencesKey("show_desktops_card")
     private val mediaExtensionsKey = stringPreferencesKey("media_extensions")
     private val lastMediaServerPortKey = intPreferencesKey("last_media_server_port")
+    private val mcpAgentEndpointEnabledKey = booleanPreferencesKey("mcp_agent_endpoint_enabled")
 
     val biometricEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[biometricEnabledKey] ?: false
@@ -224,6 +225,21 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setLastMediaServerPort(port: Int) {
         dataStore.edit { prefs ->
             prefs[lastMediaServerPortKey] = port
+        }
+    }
+
+    /**
+     * Whether the MCP agent endpoint server is enabled. Defaults to **false** —
+     * the agent transport gives programmatic access to state an AI agent
+     * or any local process can read, and must be an explicit opt-in.
+     */
+    val mcpAgentEndpointEnabled: Flow<Boolean> = dataStore.data.map { prefs ->
+        prefs[mcpAgentEndpointEnabledKey] ?: false
+    }
+
+    suspend fun setMcpAgentEndpointEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[mcpAgentEndpointEnabledKey] = enabled
         }
     }
 

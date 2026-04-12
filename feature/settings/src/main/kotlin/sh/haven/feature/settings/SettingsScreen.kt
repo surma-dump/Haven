@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.ScreenLockPortrait
@@ -143,6 +144,7 @@ fun SettingsScreen(
     val showCopyOutputButton by viewModel.showCopyOutputButton.collectAsState()
     val connectionLoggingEnabled by viewModel.connectionLoggingEnabled.collectAsState()
     val verboseLoggingEnabled by viewModel.verboseLoggingEnabled.collectAsState()
+    val mcpAgentEndpointEnabled by viewModel.mcpAgentEndpointEnabled.collectAsState()
     val mouseInputEnabled by viewModel.mouseInputEnabled.collectAsState()
     val terminalRightClick by viewModel.terminalRightClick.collectAsState()
     val allowStandardKeyboard by viewModel.allowStandardKeyboard.collectAsState()
@@ -273,6 +275,40 @@ fun SettingsScreen(
                 onCheckedChange = viewModel::setVerboseLoggingEnabled,
             )
         }
+
+        // MCP agent endpoint — OFF by default. The endpoint gives local
+        // processes (and any AI agent you point at it) read access to
+        // connection profiles, active sessions, and cloud file listings.
+        SettingsToggleItem(
+            icon = Icons.Filled.Hub,
+            title = "Agent endpoint (MCP)",
+            subtitle = if (mcpAgentEndpointEnabled) {
+                "Enabled — local MCP server exposes read-only tools on loopback"
+            } else {
+                "Disabled — turn on to let local AI agents inspect Haven's state"
+            },
+            checked = mcpAgentEndpointEnabled,
+            onCheckedChange = viewModel::setMcpAgentEndpointEnabled,
+        )
+        if (mcpAgentEndpointEnabled) {
+            // Endpoint URL is always the canonical port range start —
+            // the server binds to the first free port in 8730..8739
+            val endpointUrl = "http://127.0.0.1:8730/mcp"
+            SettingsItem(
+                icon = Icons.Filled.ContentCopy,
+                title = "Copy agent endpoint URL",
+                subtitle = endpointUrl,
+                onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
+                        as? android.content.ClipboardManager
+                    clipboard?.setPrimaryClip(
+                        android.content.ClipData.newPlainText("Haven MCP endpoint", endpointUrl),
+                    )
+                    Toast.makeText(context, "Endpoint copied", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+
         SettingsItem(
             icon = Icons.Filled.Terminal,
             title = stringResource(R.string.settings_session_persistence_title),
