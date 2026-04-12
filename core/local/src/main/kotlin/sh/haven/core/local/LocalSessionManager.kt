@@ -3,10 +3,15 @@ package sh.haven.core.local
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import sh.haven.core.data.preferences.UserPreferencesRepository
 import java.util.UUID
 import java.util.concurrent.Executors
 import javax.inject.Inject
@@ -23,7 +28,33 @@ class LocalSessionManager @Inject constructor(
     @ApplicationContext private val context: Context,
     val prootManager: ProotManager,
     val desktopManager: DesktopManager,
+    private val preferences: UserPreferencesRepository,
 ) {
+
+    /**
+     * Latest user-configured session manager (tmux/zellij/screen/byobu/none).
+     * Cached from the preferences flow on a private scope so [buildCommand]
+     * can read it synchronously. Defaults to NONE until the first emission.
+     *
+     * Why this matters: when Haven is killed (process crash, force-stop,
+     * Android lifecycle), every PRoot child dies — including any agent
+     * the user was running inside the local session. Wrapping the shell
+     * in a tmux/zellij/screen session means the next time Haven launches
+     * the same profile, `tmux new-session -A` re-attaches if the server
+     * survived (it does in some lifecycles) or starts cleanly otherwise,
+     * preserving scrollback and process state across restarts.
+     */
+    @Volatile
+    private var sessionManager: UserPreferencesRepository.SessionManager =
+        UserPreferencesRepository.SessionManager.NONE
+
+    private val prefScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        prefScope.launch {
+            preferences.sessionManager.collect { sessionManager = it }
+        }
+    }
 
     data class SessionState(
         val sessionId: String,
@@ -77,6 +108,32 @@ class LocalSessionManager @Inject constructor(
     }
 
     /**
+     * Returns the busybox sh argv for this session, optionally wrapped
+     * in the user's chosen session manager. The wrapper uses
+     * `command -v <bin>` so that picking tmux/zellij/etc without the
+     * binary installed in the rootfs falls back to a plain login shell
+     * instead of leaving the user with a dead PTY. The wrapper `exec`s
+     * the session-manager binary so signals (SIGWINCH, SIGHUP) reach
+     * tmux directly, not through an intermediate sh.
+     */
+    private fun sessionManagerShellArgs(sessionName: String): Array<String> {
+        val mgr = sessionManager
+        val template = mgr.command
+        if (template == null) {
+            return arrayOf("/bin/busybox", "sh", "-l")
+        }
+        val sanitizedName = sessionName.replace(Regex("[^A-Za-z0-9._-]"), "-")
+        val cmd = template(sanitizedName)
+        // First word of the command is the binary we test for. tmux,
+        // zellij, screen, byobu — all single-word executables.
+        val bin = cmd.substringBefore(' ')
+        // Wrap in `command -v` so missing binaries don't break the
+        // session. Login shell first so PATH/profile are set up.
+        val wrapped = "if command -v $bin >/dev/null 2>&1; then exec $cmd; else exec /bin/sh -l; fi"
+        return arrayOf("/bin/busybox", "sh", "-l", "-c", wrapped)
+    }
+
+    /**
      * Build the shell command for a local session.
      * Uses proot if a rootfs is installed, otherwise falls back to /system/bin/sh.
      */
@@ -93,6 +150,12 @@ class LocalSessionManager @Inject constructor(
                 resolvConf.writeText("nameserver 8.8.8.8\nnameserver 1.1.1.1\n")
             }
             val cmd = prootBinary
+            // Append a session-manager wrapper if the user picked one
+            // (tmux/zellij/screen/byobu). The wrapper falls back to a
+            // plain login shell if the binary isn't installed in the
+            // rootfs, so picking tmux without `apk add tmux` degrades
+            // to today's behaviour rather than failing the session.
+            val shellArgs: Array<String> = sessionManagerShellArgs("haven-local")
             val args = arrayOf(
                 prootBinary,
                 "-0",                    // fake root
@@ -104,8 +167,7 @@ class LocalSessionManager @Inject constructor(
                 "-b", "/storage",
                 "-b", "${context.cacheDir.absolutePath}:/tmp",
                 "-w", "/root",
-                "/bin/busybox", "sh", "-l",
-            )
+            ) + shellArgs
             val env = arrayOf(
                 "HOME=/root",
                 "USER=root",

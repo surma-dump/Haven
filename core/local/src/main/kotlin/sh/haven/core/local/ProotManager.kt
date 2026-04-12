@@ -566,12 +566,18 @@ class ProotManager @Inject constructor(
      * session and to follow the SSH setup instructions in the README.
      * Everything else (git, vim, compilers, language runtimes) is the
      * user's choice and stays an explicit `apk add` away.
+     *
+     * tmux is the one exception: when the user picks a session manager
+     * in Settings (default NONE), the local-session launcher needs the
+     * binary to be present, otherwise it falls back to a plain shell
+     * and the "survives Haven restarts" promise is silently broken.
+     * tmux is ~250KB, so the cost of bundling it is negligible.
      */
     private suspend fun installBaseline() {
         try {
             val (output, code) = runCommandInProot(
                 "apk update >/dev/null 2>&1 && " +
-                    "apk add --no-cache bash curl ca-certificates openssh-client 2>&1 | tail -5",
+                    "apk add --no-cache bash curl ca-certificates openssh-client tmux 2>&1 | tail -5",
             )
             if (code == 0) {
                 Log.d(TAG, "Baseline packages installed")
